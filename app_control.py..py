@@ -7,10 +7,57 @@ st.set_page_config(page_title="Control Gerencial", page_icon="📊", layout="wid
 st.title("📊 Sistema de Control Gerencial: Apropiado vs Pagado")
 st.markdown("Automatización de cruces de información por NIT para el control de pagos y apropiaciones.")
 
+# Función original para Seguridad Social y FIC
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
+    return output.getvalue()
+
+# NUEVA FUNCIÓN MÁGICA: Genera Excel con FÓRMULAS y ENCABEZADOS ROJOS para la Gestión 1
+def to_excel_tab1(df):
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
+    
+    workbook = writer.book
+    worksheet = writer.sheets['Cruce Consolidado']
+    
+    # 1. Crear el formato de encabezado rojo con letra blanca
+    header_format = workbook.add_format({
+        'bg_color': '#C00000', # Color rojo oscuro idéntico a tu imagen
+        'font_color': 'white',
+        'bold': True,
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+    
+    # 2. Crear formato para el porcentaje (sin decimales, ej. 98%)
+    pct_format = workbook.add_format({'num_format': '0%', 'align': 'center'})
+    
+    # 3. Aplicar el fondo rojo a todos los encabezados
+    for col_num, value in enumerate(df.columns.values):
+        worksheet.write(0, col_num, value, header_format)
+        
+    # 4. Inyectar las fórmulas reales de Excel fila por fila
+    for row_num in range(1, len(df) + 1):
+        excel_row = row_num + 1 # Fila en Excel (1-based + 1 por el encabezado)
+        
+        # Fórmula DIFERENCIA (Col H) = NOMINA (Col D) - EMPRESA_Pagado (Col G)
+        worksheet.write_formula(row_num, 7, f'=D{excel_row}-G{excel_row}')
+        
+        # Fórmula PORCENTAJE (Col I) = EMPRESA_Pagado (Col G) / NOMINA (Col D)
+        worksheet.write_formula(row_num, 8, f'=IFERROR(G{excel_row}/D{excel_row}, 0)', pct_format)
+        
+    # Ajustar el ancho de las columnas para que se vea ordenado
+    worksheet.set_column('A:A', 15)
+    worksheet.set_column('B:B', 35)
+    worksheet.set_column('C:C', 18)
+    worksheet.set_column('D:G', 16)
+    worksheet.set_column('H:I', 15)
+    
+    writer.close()
     return output.getvalue()
 
 def get_direct_excel_link(url):
@@ -24,7 +71,6 @@ def get_direct_excel_link(url):
         return f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
     return url
 
-# Función para llenar vacíos sin dañar el texto
 def safe_fillna(df):
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
@@ -38,7 +84,7 @@ st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO (ACTUALIZADA PARA GERENCIA)
+# GESTIÓN 1: APROPIACIÓN VS PAGO
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -56,17 +102,14 @@ with tab1:
                 link_aprop = get_direct_excel_link(url_aprop_1)
                 link_pago = get_direct_excel_link(url_pago_1)
                 
-                # Leer archivos
                 df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
                 hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
                 df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
                 
-                # Limpiar nombres de columnas por si tienen espacios ocultos
                 df_aprop.columns = df_aprop.columns.str.strip()
                 df_pago.columns = df_pago.columns.str.strip()
                 
-                # 1. AGRUPAR APROPIACIÓN POR NIT
-                # Sumamos el dinero y conservamos el primer nombre de la empresa
+                # AGRUPAR APROPIACIÓN
                 aprop_num_cols = df_aprop.select_dtypes(include='number').columns.tolist()
                 if 'NIT' in aprop_num_cols: aprop_num_cols.remove('NIT')
                 agg_aprop = {col: 'sum' for col in aprop_num_cols}
@@ -74,7 +117,7 @@ with tab1:
                 if 'TOTAL ACTA' in df_aprop.columns and 'TOTAL ACTA' not in agg_aprop: agg_aprop['TOTAL ACTA'] = 'sum'
                 df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
                 
-                # 2. AGRUPAR PAGO POR NIT (Por precaución)
+                # AGRUPAR PAGO
                 pago_num_cols = df_pago.select_dtypes(include='number').columns.tolist()
                 if 'NIT' in pago_num_cols: pago_num_cols.remove('NIT')
                 agg_pago = {col: 'sum' for col in pago_num_cols}
@@ -82,23 +125,42 @@ with tab1:
                 if 'TOTAL' in df_pago.columns and 'TOTAL' not in agg_pago: agg_pago['TOTAL'] = 'sum'
                 df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
                 
-                # 3. CRUCE CONSOLIDADO
+                # CRUCE
                 cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
                 cruce_1 = safe_fillna(cruce_1)
                 
-                # 4. COLUMNAS GERENCIALES DE VALIDACIÓN (Apropiado - Pagado)
-                if 'NOMINA_Apropiado' in cruce_1.columns and 'NOMINA_Pagado' in cruce_1.columns:
-                    cruce_1['VALIDACION_NOMINA'] = cruce_1['NOMINA_Apropiado'] - cruce_1['NOMINA_Pagado']
-                    
-                if 'PRESTACIONES_Apropiado' in cruce_1.columns and 'PRESTACIONES_Pagado' in cruce_1.columns:
-                    cruce_1['VALIDACION_PRESTACIONES'] = cruce_1['PRESTACIONES_Apropiado'] - cruce_1['PRESTACIONES_Pagado']
-                    
-                if 'TOTAL ACTA' in cruce_1.columns and 'TOTAL' in cruce_1.columns:
-                    cruce_1['VALIDACION_TOTAL'] = cruce_1['TOTAL ACTA'] - cruce_1['TOTAL']
+                # CONSTRUIR LA ESTRUCTURA EXACTA QUE PEDISTE
+                df_export = pd.DataFrame()
+                df_export['NIT'] = cruce_1['NIT']
+                df_export['EMPRESA_Apropiado'] = cruce_1['EMPRESA_Apropiado']
                 
-                st.success("¡Cruce gerencial realizado con éxito! Un registro único por NIT.")
-                st.dataframe(cruce_1.head())
-                st.download_button(label="📥 Descargar Reporte en Excel", data=to_excel(cruce_1), file_name="Cruce_Apropiacion_vs_Pago_Consolidado.xlsx", mime="application/vnd.ms-excel")
+                col_cant = 'CANT EMPLEADOS_Apropiado' if 'CANT EMPLEADOS_Apropiado' in cruce_1.columns else 'CANT EMPLEADOS'
+                df_export['CANT EMPLEADOS'] = cruce_1.get(col_cant, 0)
+                
+                df_export['NOMINA'] = cruce_1.get('NOMINA_Apropiado', 0)
+                df_export['PRESTACIONES'] = cruce_1.get('PRESTACIONES_Apropiado', 0)
+                
+                col_total_aprop = 'TOTAL ACTA' if 'TOTAL ACTA' in cruce_1.columns else 'TOTAL_Apropiado'
+                df_export['TOTAL'] = cruce_1.get(col_total_aprop, 0)
+                
+                # Se utiliza NOMINA_Pagado bajo el nombre de columna EMPRESA_Pagado como en tu imagen
+                df_export['EMPRESA_Pagado'] = cruce_1.get('NOMINA_Pagado', 0)
+                
+                # Cálculos temporales solo para que se vean en la pantalla de la web
+                df_export['DIFERENCIA'] = df_export['NOMINA'] - df_export['EMPRESA_Pagado']
+                nomina_segura = df_export['NOMINA'].replace(0, 1) # Evitar dividir por cero en la web
+                df_export['PORCENTAJE'] = (df_export['EMPRESA_Pagado'] / nomina_segura).where(df_export['NOMINA'] != 0, 0)
+                
+                st.success("¡Reporte Gerencial Listo! El archivo Excel incluye encabezados rojos y fórmulas reales.")
+                st.dataframe(df_export.head())
+                
+                # Descarga utilizando la nueva función con formato y fórmulas
+                st.download_button(
+                    label="📥 Descargar Reporte en Excel", 
+                    data=to_excel_tab1(df_export), 
+                    file_name="Reporte_Gerencial_Apropiacion_vs_Pago.xlsx", 
+                    mime="application/vnd.ms-excel"
+                )
             except Exception as e:
                 st.error(f"Error procesando los archivos. Detalle: {e}")
         else:
