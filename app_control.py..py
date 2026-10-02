@@ -24,7 +24,7 @@ def get_direct_excel_link(url):
         return f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
     return url
 
-# Nueva función inteligente para llenar vacíos sin errores
+# Función para llenar vacíos sin dañar el texto
 def safe_fillna(df):
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
@@ -38,7 +38,7 @@ st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO
+# GESTIÓN 1: APROPIACIÓN VS PAGO (ACTUALIZADA PARA GERENCIA)
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -56,17 +56,49 @@ with tab1:
                 link_aprop = get_direct_excel_link(url_aprop_1)
                 link_pago = get_direct_excel_link(url_pago_1)
                 
+                # Leer archivos
                 df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
                 hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
                 df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
                 
-                # Cruce y llenado seguro
-                cruce_1 = pd.merge(df_aprop, df_pago, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
+                # Limpiar nombres de columnas por si tienen espacios ocultos
+                df_aprop.columns = df_aprop.columns.str.strip()
+                df_pago.columns = df_pago.columns.str.strip()
+                
+                # 1. AGRUPAR APROPIACIÓN POR NIT
+                # Sumamos el dinero y conservamos el primer nombre de la empresa
+                aprop_num_cols = df_aprop.select_dtypes(include='number').columns.tolist()
+                if 'NIT' in aprop_num_cols: aprop_num_cols.remove('NIT')
+                agg_aprop = {col: 'sum' for col in aprop_num_cols}
+                if 'EMPRESA' in df_aprop.columns: agg_aprop['EMPRESA'] = 'first'
+                if 'TOTAL ACTA' in df_aprop.columns and 'TOTAL ACTA' not in agg_aprop: agg_aprop['TOTAL ACTA'] = 'sum'
+                df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
+                
+                # 2. AGRUPAR PAGO POR NIT (Por precaución)
+                pago_num_cols = df_pago.select_dtypes(include='number').columns.tolist()
+                if 'NIT' in pago_num_cols: pago_num_cols.remove('NIT')
+                agg_pago = {col: 'sum' for col in pago_num_cols}
+                if 'EMPRESA' in df_pago.columns: agg_pago['EMPRESA'] = 'first'
+                if 'TOTAL' in df_pago.columns and 'TOTAL' not in agg_pago: agg_pago['TOTAL'] = 'sum'
+                df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
+                
+                # 3. CRUCE CONSOLIDADO
+                cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
                 cruce_1 = safe_fillna(cruce_1)
                 
-                st.success("¡Cruce realizado con éxito!")
+                # 4. COLUMNAS GERENCIALES DE VALIDACIÓN (Apropiado - Pagado)
+                if 'NOMINA_Apropiado' in cruce_1.columns and 'NOMINA_Pagado' in cruce_1.columns:
+                    cruce_1['VALIDACION_NOMINA'] = cruce_1['NOMINA_Apropiado'] - cruce_1['NOMINA_Pagado']
+                    
+                if 'PRESTACIONES_Apropiado' in cruce_1.columns and 'PRESTACIONES_Pagado' in cruce_1.columns:
+                    cruce_1['VALIDACION_PRESTACIONES'] = cruce_1['PRESTACIONES_Apropiado'] - cruce_1['PRESTACIONES_Pagado']
+                    
+                if 'TOTAL ACTA' in cruce_1.columns and 'TOTAL' in cruce_1.columns:
+                    cruce_1['VALIDACION_TOTAL'] = cruce_1['TOTAL ACTA'] - cruce_1['TOTAL']
+                
+                st.success("¡Cruce gerencial realizado con éxito! Un registro único por NIT.")
                 st.dataframe(cruce_1.head())
-                st.download_button(label="📥 Descargar Reporte en Excel", data=to_excel(cruce_1), file_name="Cruce_Apropiacion_vs_Pago.xlsx", mime="application/vnd.ms-excel")
+                st.download_button(label="📥 Descargar Reporte en Excel", data=to_excel(cruce_1), file_name="Cruce_Apropiacion_vs_Pago_Consolidado.xlsx", mime="application/vnd.ms-excel")
             except Exception as e:
                 st.error(f"Error procesando los archivos. Detalle: {e}")
         else:
