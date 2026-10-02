@@ -7,14 +7,12 @@ st.set_page_config(page_title="Control Gerencial", page_icon="📊", layout="wid
 st.title("📊 Sistema de Control Gerencial: Apropiado vs Pagado")
 st.markdown("Automatización de cruces de información por NIT para el control de pagos y apropiaciones.")
 
-# Función para convertir dataframe a Excel
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
     return output.getvalue()
 
-# Función MÁGICA para leer URLs de Google Drive directamente
 def get_direct_excel_link(url):
     if not url or url.strip() == "":
         return None
@@ -25,6 +23,15 @@ def get_direct_excel_link(url):
         file_id = url.split("/d/")[1].split("/")[0]
         return f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
     return url
+
+# Nueva función inteligente para llenar vacíos sin errores
+def safe_fillna(df):
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = df[col].fillna(0)
+        else:
+            df[col] = df[col].fillna("")
+    return df
 
 st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan el permiso configurado como 'Cualquier persona con el enlace puede leer'.")
 
@@ -50,22 +57,18 @@ with tab1:
                 link_pago = get_direct_excel_link(url_pago_1)
                 
                 df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
-                
                 hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
                 df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
                 
-                df_aprop.fillna(0, inplace=True)
-                df_pago.fillna(0, inplace=True)
-                
+                # Cruce y llenado seguro
                 cruce_1 = pd.merge(df_aprop, df_pago, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
-                cruce_1.fillna(0, inplace=True)
+                cruce_1 = safe_fillna(cruce_1)
                 
                 st.success("¡Cruce realizado con éxito!")
                 st.dataframe(cruce_1.head())
-                
                 st.download_button(label="📥 Descargar Reporte en Excel", data=to_excel(cruce_1), file_name="Cruce_Apropiacion_vs_Pago.xlsx", mime="application/vnd.ms-excel")
             except Exception as e:
-                st.error(f"Error procesando los archivos. Verifica los permisos del Drive o las hojas del Excel. Detalle: {e}")
+                st.error(f"Error procesando los archivos. Detalle: {e}")
         else:
             st.warning("Por favor, pega ambas URLs para continuar.")
 
@@ -102,13 +105,13 @@ with tab2:
                 df_ss_mensual = pd.read_excel(link_mensual, sheet_name="SSGCON")
                 
                 cruce_2 = pd.merge(df_aprop_agrupado, df_ss_mensual, on="NIT", how="outer")
-                cruce_2.fillna(0, inplace=True)
+                cruce_2 = safe_fillna(cruce_2)
                 
                 st.success("¡Cruce de Seguridad Social consolidado!")
                 st.dataframe(cruce_2.head())
                 st.download_button(label="📥 Descargar Reporte Seguridad Social", data=to_excel(cruce_2), file_name="Cruce_Seguridad_Social.xlsx")
             except Exception as e:
-                st.error(f"Error procesando. Verifica permisos u hojas. Detalle: {e}")
+                st.error(f"Error procesando. Detalle: {e}")
         else:
             st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
 
@@ -145,12 +148,12 @@ with tab3:
                 df_fic_mensual = pd.read_excel(link_mensual, sheet_name="EMPRESA")
                 
                 cruce_3 = pd.merge(df_fic_agrupado, df_fic_mensual, on="NIT", how="outer")
-                cruce_3.fillna(0, inplace=True)
+                cruce_3 = safe_fillna(cruce_3)
                 
                 st.success("¡Cruce de FIC consolidado!")
                 st.dataframe(cruce_3.head())
                 st.download_button(label="📥 Descargar Reporte FIC", data=to_excel(cruce_3), file_name="Cruce_FIC.xlsx")
             except Exception as e:
-                st.error(f"Error procesando. Verifica permisos u hojas. Detalle: {e}")
+                st.error(f"Error procesando. Detalle: {e}")
         else:
             st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
