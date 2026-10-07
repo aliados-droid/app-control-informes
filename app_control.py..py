@@ -7,55 +7,55 @@ st.set_page_config(page_title="Control Gerencial", page_icon="📊", layout="wid
 st.title("📊 Sistema de Control Gerencial: Apropiado vs Pagado")
 st.markdown("Automatización de cruces de información por NIT para el control de pagos y apropiaciones.")
 
-# Función original para Seguridad Social y FIC
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
     return output.getvalue()
 
-# NUEVA FUNCIÓN MÁGICA: Genera Excel con FÓRMULAS y ENCABEZADOS ROJOS para la Gestión 1
+# FUNCIÓN MÁGICA PARA EL CONSOLIDADO NACIONAL (PESTAÑA 1)
 def to_excel_tab1(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
+    df.to_excel(writer, index=False, sheet_name='CONSOLIDADO NACIONAL')
     
     workbook = writer.book
-    worksheet = writer.sheets['Cruce Consolidado']
+    worksheet = writer.sheets['CONSOLIDADO NACIONAL']
     
-    # 1. Crear el formato de encabezado rojo con letra blanca
+    # 1. Crear el formato de encabezado rojo con letra blanca y salto de línea
     header_format = workbook.add_format({
-        'bg_color': '#C00000', # Color rojo oscuro idéntico a tu imagen
+        'bg_color': '#C00000', # Color rojo oscuro
         'font_color': 'white',
         'bold': True,
         'border': 1,
         'align': 'center',
-        'valign': 'vcenter'
+        'valign': 'vcenter',
+        'text_wrap': True # Permite que el texto se divida en dos líneas
     })
     
-    # 2. Crear formato para el porcentaje (sin decimales, ej. 98%)
-    pct_format = workbook.add_format({'num_format': '0%', 'align': 'center'})
+    worksheet.set_row(0, 35) # Hace más alto el encabezado para que quepa el texto
     
-    # 3. Aplicar el fondo rojo a todos los encabezados
+    # 2. Aplicar el formato
     for col_num, value in enumerate(df.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    # 4. Inyectar las fórmulas reales de Excel fila por fila
+    # 3. Inyectar las fórmulas reales fila por fila
     for row_num in range(1, len(df) + 1):
-        excel_row = row_num + 1 # Fila en Excel (1-based + 1 por el encabezado)
+        excel_row = row_num + 1 
         
-        # Fórmula DIFERENCIA (Col H) = NOMINA (Col D) - EMPRESA_Pagado (Col G)
-        worksheet.write_formula(row_num, 7, f'=D{excel_row}-G{excel_row}')
+        # F: TOTAL APROPIACION = D + E (NOMINA + PRESTACIONES APROP)
+        worksheet.write_formula(row_num, 5, f'=D{excel_row}+E{excel_row}')
         
-        # Fórmula PORCENTAJE (Col I) = EMPRESA_Pagado (Col G) / NOMINA (Col D)
-        worksheet.write_formula(row_num, 8, f'=IFERROR(G{excel_row}/D{excel_row}, 0)', pct_format)
+        # J: DIFERENCIA = F - I (con condicional para validar contra Prestaciones Aprop "Columna E")
+        formula_dif = f'=IF(F{excel_row}-I{excel_row}<0, IF(ABS(F{excel_row}-I{excel_row})<=E{excel_row}, 0, F{excel_row}-I{excel_row}), F{excel_row}-I{excel_row})'
+        worksheet.write_formula(row_num, 9, formula_dif)
         
-    # Ajustar el ancho de las columnas para que se vea ordenado
+    # 4. Ajustar el ancho de las columnas
     worksheet.set_column('A:A', 15)
     worksheet.set_column('B:B', 35)
     worksheet.set_column('C:C', 18)
-    worksheet.set_column('D:G', 16)
-    worksheet.set_column('H:I', 15)
+    worksheet.set_column('D:I', 18)
+    worksheet.set_column('J:J', 15)
     
     writer.close()
     return output.getvalue()
@@ -84,7 +84,7 @@ st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO
+# GESTIÓN 1: APROPIACIÓN VS PAGO (ACTUALIZADA)
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -103,62 +103,81 @@ with tab1:
                 link_pago = get_direct_excel_link(url_pago_1)
                 
                 df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
+                # Usa NOMCONBOG o NOMCONEJE dependiendo del selectbox
                 hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
                 df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
                 
                 df_aprop.columns = df_aprop.columns.str.strip()
                 df_pago.columns = df_pago.columns.str.strip()
                 
-                # AGRUPAR APROPIACIÓN
-                aprop_num_cols = df_aprop.select_dtypes(include='number').columns.tolist()
-                if 'NIT' in aprop_num_cols: aprop_num_cols.remove('NIT')
-                agg_aprop = {col: 'sum' for col in aprop_num_cols}
-                if 'EMPRESA' in df_aprop.columns: agg_aprop['EMPRESA'] = 'first'
-                if 'TOTAL ACTA' in df_aprop.columns and 'TOTAL ACTA' not in agg_aprop: agg_aprop['TOTAL ACTA'] = 'sum'
+                # 1. FILTRAR Y AGRUPAR APROPIACIÓN
+                aprop_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']
+                for c in aprop_cols:
+                    if c not in df_aprop.columns:
+                        df_aprop[c] = 0 if c != 'EMPRESA' else ""
+                        
+                agg_aprop = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum'}
                 df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
                 
-                # AGRUPAR PAGO
-                pago_num_cols = df_pago.select_dtypes(include='number').columns.tolist()
-                if 'NIT' in pago_num_cols: pago_num_cols.remove('NIT')
-                agg_pago = {col: 'sum' for col in pago_num_cols}
-                if 'EMPRESA' in df_pago.columns: agg_pago['EMPRESA'] = 'first'
-                if 'TOTAL' in df_pago.columns and 'TOTAL' not in agg_pago: agg_pago['TOTAL'] = 'sum'
+                # 2. FILTRAR Y AGRUPAR PAGO
+                pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
+                for c in pago_cols:
+                    if c not in df_pago.columns:
+                        df_pago[c] = 0 if c != 'EMPRESA' else ""
+                        
+                agg_pago = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TOTAL': 'sum'}
                 df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
                 
-                # CRUCE
+                # 3. CRUCE CONSOLIDADO
                 cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
                 cruce_1 = safe_fillna(cruce_1)
                 
-                # CONSTRUIR LA ESTRUCTURA EXACTA QUE PEDISTE
+                # 4. PROMEDIO DE EMPLEADOS
+                cant_promedio = []
+                for a, p in zip(cruce_1['CANT EMPLEADOS_Apropiado'], cruce_1['CANT EMPLEADOS_Pagado']):
+                    a_val = pd.to_numeric(a, errors='coerce')
+                    p_val = pd.to_numeric(p, errors='coerce')
+                    a_val = a_val if not pd.isna(a_val) else 0
+                    p_val = p_val if not pd.isna(p_val) else 0
+                    
+                    if a_val > 0 and p_val > 0:
+                        cant_promedio.append(int(round((a_val + p_val) / 2)))
+                    elif a_val > 0:
+                        cant_promedio.append(int(a_val))
+                    else:
+                        cant_promedio.append(int(p_val))
+                        
+                # 5. CONSTRUIR LA ESTRUCTURA DEL CONSOLIDADO NACIONAL
                 df_export = pd.DataFrame()
                 df_export['NIT'] = cruce_1['NIT']
-                df_export['EMPRESA_Apropiado'] = cruce_1['EMPRESA_Apropiado']
                 
-                col_cant = 'CANT EMPLEADOS_Apropiado' if 'CANT EMPLEADOS_Apropiado' in cruce_1.columns else 'CANT EMPLEADOS'
-                df_export['CANT EMPLEADOS'] = cruce_1.get(col_cant, 0)
+                # Nombre de la empresa de cualquiera de los lados
+                df_export['EMPRESA'] = cruce_1['EMPRESA_Apropiado'].where(cruce_1['EMPRESA_Apropiado'] != "", cruce_1['EMPRESA_Pagado'])
                 
-                df_export['NOMINA'] = cruce_1.get('NOMINA_Apropiado', 0)
-                df_export['PRESTACIONES'] = cruce_1.get('PRESTACIONES_Apropiado', 0)
+                df_export['CANT EMPLEADOS'] = cant_promedio
+                df_export['NOMINA\nAPROPIACION'] = cruce_1['NOMINA_Apropiado']
+                df_export['PRESTACIONES\nAPROPIACION'] = cruce_1['PRESTACIONES_Apropiado']
                 
-                col_total_aprop = 'TOTAL ACTA' if 'TOTAL ACTA' in cruce_1.columns else 'TOTAL_Apropiado'
-                df_export['TOTAL'] = cruce_1.get(col_total_aprop, 0)
+                # Cálculo para la vista previa de la miniapp (en Excel irá la fórmula real)
+                df_export['TOTAL APROPIACION'] = df_export['NOMINA\nAPROPIACION'] + df_export['PRESTACIONES\nAPROPIACION']
                 
-                # Se utiliza NOMINA_Pagado bajo el nombre de columna EMPRESA_Pagado como en tu imagen
-                df_export['EMPRESA_Pagado'] = cruce_1.get('NOMINA_Pagado', 0)
+                df_export['NOMINA\nAPROBACION'] = cruce_1['NOMINA_Pagado']
+                df_export['PRESTACIONES\nAPROBACION'] = cruce_1['PRESTACIONES_Pagado']
+                df_export['TOTAL APROBACION'] = cruce_1['TOTAL']
                 
-                # Cálculos temporales solo para que se vean en la pantalla de la web
-                df_export['DIFERENCIA'] = df_export['NOMINA'] - df_export['EMPRESA_Pagado']
-                nomina_segura = df_export['NOMINA'].replace(0, 1) # Evitar dividir por cero en la web
-                df_export['PORCENTAJE'] = (df_export['EMPRESA_Pagado'] / nomina_segura).where(df_export['NOMINA'] != 0, 0)
+                # Cálculo temporal para la vista previa de DIFERENCIA en la miniapp
+                dif = df_export['TOTAL APROPIACION'] - df_export['TOTAL APROBACION']
+                prestaciones_aprop = df_export['PRESTACIONES\nAPROPIACION']
+                df_export['DIFERENCIA'] = dif.where(~((dif < 0) & (abs(dif) <= prestaciones_aprop)), 0)
                 
-                st.success("¡Reporte Gerencial Listo! El archivo Excel incluye encabezados rojos y fórmulas reales.")
+                st.success("¡Cruce Consolidado Nacional generado con éxito!")
                 st.dataframe(df_export.head())
                 
-                # Descarga utilizando la nueva función con formato y fórmulas
+                # Botón de Descarga
                 st.download_button(
-                    label="📥 Descargar Reporte en Excel", 
+                    label="📥 Descargar CONSOLIDADO NACIONAL", 
                     data=to_excel_tab1(df_export), 
-                    file_name="Reporte_Gerencial_Apropiacion_vs_Pago.xlsx", 
+                    file_name="CONSOLIDADO NACIONAL.xlsx", 
                     mime="application/vnd.ms-excel"
                 )
             except Exception as e:
