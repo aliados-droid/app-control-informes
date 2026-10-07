@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
+import json
+import gspread
 
 # Configuración de la página
 st.set_page_config(page_title="Control Gerencial", page_icon="📊", layout="wide")
@@ -13,7 +15,6 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Cruce Consolidado')
     return output.getvalue()
 
-# FUNCIÓN MÁGICA PARA EL CONSOLIDADO NACIONAL (PESTAÑA 1)
 def to_excel_tab1(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
@@ -22,35 +23,27 @@ def to_excel_tab1(df):
     workbook = writer.book
     worksheet = writer.sheets['CONSOLIDADO NACIONAL']
     
-    # 1. Crear el formato de encabezado rojo con letra blanca y salto de línea
     header_format = workbook.add_format({
-        'bg_color': '#C00000', # Color rojo oscuro
+        'bg_color': '#C00000',
         'font_color': 'white',
         'bold': True,
         'border': 1,
         'align': 'center',
         'valign': 'vcenter',
-        'text_wrap': True # Permite que el texto se divida en dos líneas
+        'text_wrap': True
     })
     
-    worksheet.set_row(0, 35) # Hace más alto el encabezado para que quepa el texto
+    worksheet.set_row(0, 35) 
     
-    # 2. Aplicar el formato
     for col_num, value in enumerate(df.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    # 3. Inyectar las fórmulas reales fila por fila
     for row_num in range(1, len(df) + 1):
         excel_row = row_num + 1 
-        
-        # F: TOTAL APROPIACION = D + E (NOMINA + PRESTACIONES APROP)
         worksheet.write_formula(row_num, 5, f'=D{excel_row}+E{excel_row}')
-        
-        # J: DIFERENCIA = F - I (con condicional para validar contra Prestaciones Aprop "Columna E")
         formula_dif = f'=IF(F{excel_row}-I{excel_row}<0, IF(ABS(F{excel_row}-I{excel_row})<=E{excel_row}, 0, F{excel_row}-I{excel_row}), F{excel_row}-I{excel_row})'
         worksheet.write_formula(row_num, 9, formula_dif)
         
-    # 4. Ajustar el ancho de las columnas
     worksheet.set_column('A:A', 15)
     worksheet.set_column('B:B', 35)
     worksheet.set_column('C:C', 18)
@@ -79,12 +72,39 @@ def safe_fillna(df):
             df[col] = df[col].fillna("")
     return df
 
+# FUNCIÓN PARA GUARDAR EN GOOGLE SHEETS
+def guardar_en_drive(dataframe):
+    try:
+        # 1. Leer las credenciales de los secretos de Streamlit
+        cred_dict = json.loads(st.secrets["google_credentials"])
+        
+        # 2. Autenticar con Google
+        gc = gspread.service_account_from_dict(cred_dict)
+        
+        # 3. Abrir el archivo por su ID (sacado del enlace que enviaste)
+        sh = gc.open_by_key("1LKPRUwGTBJLVZB7noEtt1oTfN-VhcG69")
+        
+        # 4. Seleccionar la hoja NOMINA
+        worksheet = sh.worksheet("NOMINA")
+        
+        # 5. Limpiar los datos para que Google Sheets los acepte sin errores
+        df_clean = safe_fillna(dataframe.copy())
+        # Convertimos todo a formato lista de listas
+        datos_para_enviar = df_clean.values.tolist()
+        
+        # 6. Agregar filas al final (sin borrar lo existente)
+        worksheet.append_rows(datos_para_enviar)
+        
+        return True, "¡Datos guardados exitosamente en Google Drive!"
+    except Exception as e:
+        return False, f"Error al guardar en Drive: {e}"
+
 st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan el permiso configurado como 'Cualquier persona con el enlace puede leer'.")
 
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO (ACTUALIZADA)
+# GESTIÓN 1: APROPIACIÓN VS PAGO
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -103,14 +123,12 @@ with tab1:
                 link_pago = get_direct_excel_link(url_pago_1)
                 
                 df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
-                # Usa NOMCONBOG o NOMCONEJE dependiendo del selectbox
                 hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
                 df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
                 
                 df_aprop.columns = df_aprop.columns.str.strip()
                 df_pago.columns = df_pago.columns.str.strip()
                 
-                # 1. FILTRAR Y AGRUPAR APROPIACIÓN
                 aprop_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']
                 for c in aprop_cols:
                     if c not in df_aprop.columns:
@@ -119,7 +137,6 @@ with tab1:
                 agg_aprop = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum'}
                 df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
                 
-                # 2. FILTRAR Y AGRUPAR PAGO
                 pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
                 for c in pago_cols:
                     if c not in df_pago.columns:
@@ -128,11 +145,9 @@ with tab1:
                 agg_pago = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TOTAL': 'sum'}
                 df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
                 
-                # 3. CRUCE CONSOLIDADO
                 cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
                 cruce_1 = safe_fillna(cruce_1)
                 
-                # 4. PROMEDIO DE EMPLEADOS
                 cant_promedio = []
                 for a, p in zip(cruce_1['CANT EMPLEADOS_Apropiado'], cruce_1['CANT EMPLEADOS_Pagado']):
                     a_val = pd.to_numeric(a, errors='coerce')
@@ -147,43 +162,54 @@ with tab1:
                     else:
                         cant_promedio.append(int(p_val))
                         
-                # 5. CONSTRUIR LA ESTRUCTURA DEL CONSOLIDADO NACIONAL
                 df_export = pd.DataFrame()
                 df_export['NIT'] = cruce_1['NIT']
-                
-                # Nombre de la empresa de cualquiera de los lados
                 df_export['EMPRESA'] = cruce_1['EMPRESA_Apropiado'].where(cruce_1['EMPRESA_Apropiado'] != "", cruce_1['EMPRESA_Pagado'])
-                
                 df_export['CANT EMPLEADOS'] = cant_promedio
                 df_export['NOMINA\nAPROPIACION'] = cruce_1['NOMINA_Apropiado']
                 df_export['PRESTACIONES\nAPROPIACION'] = cruce_1['PRESTACIONES_Apropiado']
-                
-                # Cálculo para la vista previa de la miniapp (en Excel irá la fórmula real)
                 df_export['TOTAL APROPIACION'] = df_export['NOMINA\nAPROPIACION'] + df_export['PRESTACIONES\nAPROPIACION']
-                
                 df_export['NOMINA\nAPROBACION'] = cruce_1['NOMINA_Pagado']
                 df_export['PRESTACIONES\nAPROBACION'] = cruce_1['PRESTACIONES_Pagado']
                 df_export['TOTAL APROBACION'] = cruce_1['TOTAL']
                 
-                # Cálculo temporal para la vista previa de DIFERENCIA en la miniapp
                 dif = df_export['TOTAL APROPIACION'] - df_export['TOTAL APROBACION']
                 prestaciones_aprop = df_export['PRESTACIONES\nAPROPIACION']
                 df_export['DIFERENCIA'] = dif.where(~((dif < 0) & (abs(dif) <= prestaciones_aprop)), 0)
                 
+                # Guardamos el DataFrame en la "memoria" de Streamlit para usarlo en los botones
+                st.session_state['df_cruce_1'] = df_export
+                
                 st.success("¡Cruce Consolidado Nacional generado con éxito!")
                 st.dataframe(df_export.head())
-                
-                # Botón de Descarga
-                st.download_button(
-                    label="📥 Descargar CONSOLIDADO NACIONAL", 
-                    data=to_excel_tab1(df_export), 
-                    file_name="CONSOLIDADO NACIONAL.xlsx", 
-                    mime="application/vnd.ms-excel"
-                )
             except Exception as e:
                 st.error(f"Error procesando los archivos. Detalle: {e}")
         else:
             st.warning("Por favor, pega ambas URLs para continuar.")
+            
+    # MOSTRAR BOTONES SI EL CRUCE YA SE GENERÓ
+    if 'df_cruce_1' in st.session_state:
+        st.markdown("### ¿Qué deseas hacer con el resultado?")
+        btn_col1, btn_col2 = st.columns(2)
+        
+        with btn_col1:
+            st.download_button(
+                label="📥 Descargar CONSOLIDADO NACIONAL (Excel)", 
+                data=to_excel_tab1(st.session_state['df_cruce_1']), 
+                file_name="CONSOLIDADO NACIONAL.xlsx", 
+                mime="application/vnd.ms-excel",
+                use_container_width=True
+            )
+            
+        with btn_col2:
+            if st.button("☁️ Guardar histórico en Google Drive", use_container_width=True):
+                with st.spinner("Conectando con Google Drive..."):
+                    exito, mensaje = guardar_en_drive(st.session_state['df_cruce_1'])
+                    if exito:
+                        st.success(mensaje)
+                    else:
+                        st.error(mensaje)
+                        st.info("Asegúrate de que el robot tenga permisos de 'Editor' en tu archivo CONSOLIDADOS NACIONAL de Drive.")
 
 # ==========================================
 # GESTIÓN 2: SEGURIDAD SOCIAL
