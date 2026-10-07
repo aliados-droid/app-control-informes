@@ -82,7 +82,7 @@ def guardar_en_drive(dataframe):
         gc = gspread.service_account_from_dict(cred_dict)
         
         # 3. Abrir el archivo por su ID (sacado del enlace que enviaste)
-        sh = gc.open_by_key("1LKPRUwGTBJLVZB7noEtt1oTfN-VhcG69")
+        sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s/edit?gid=875184286#gid=875184286")
         
         # 4. Seleccionar la hoja NOMINA
         worksheet = sh.worksheet("NOMINA")
