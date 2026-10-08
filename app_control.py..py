@@ -84,7 +84,7 @@ def guardar_en_drive(dataframe):
         gc = gspread.service_account_from_dict(cred_dict)
         
         # 👇 ¡OJO AQUÍ! CAMBIA ESTO POR EL ID DE TU NUEVO ARCHIVO DE GOOGLE SHEETS 👇
-        sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
+        sh = gc.open_by_key("AQUI_PEGA_TU_NUEVO_ID_DEL_SHEET")
         
         worksheet = sh.worksheet("NOMINA")
         
@@ -109,63 +109,4 @@ with tab1:
     col1, col2 = st.columns(2)
     
     with col1:
-        url_aprop_1 = st.text_input("Pega la URL de Drive - Apropiación:", key="url_aprop1")
-        ciudad = st.selectbox("Selecciona la región del pago:", ["Bogotá (NOMCONBOG)", "Eje Cafetero (NOMCONEJE)"])
-    with col2:
-        url_pago_1 = st.text_input("Pega la URL de Drive - Aprobación de Pago:", key="url_pago1")
-    
-    if st.button("Generar Cruce Apropiación vs Pago", type="primary"):
-        if url_aprop_1 and url_pago_1:
-            try:
-                link_aprop = get_direct_excel_link(url_aprop_1)
-                link_pago = get_direct_excel_link(url_pago_1)
-                
-                df_aprop = pd.read_excel(link_aprop, sheet_name="EMPRESA")
-                hoja_pago = "NOMCONBOG" if "Bogotá" in ciudad else "NOMCONEJE"
-                df_pago = pd.read_excel(link_pago, sheet_name=hoja_pago)
-                
-                df_aprop.columns = df_aprop.columns.str.strip()
-                df_pago.columns = df_pago.columns.str.strip()
-                
-                # SE AGREGA 'PERIODO' Y 'TIPO' A LAS COLUMNAS REQUERIDAS DE APROPIACIÓN
-                aprop_cols = ['NIT', 'EMPRESA', 'PERIODO', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TIPO']
-                for c in aprop_cols:
-                    if c not in df_aprop.columns:
-                        df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO', 'TIPO'] else ""
-                        
-                agg_aprop = {'EMPRESA': 'first', 'PERIODO': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TIPO': 'first'}
-                df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
-                
-                pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
-                for c in pago_cols:
-                    if c not in df_pago.columns:
-                        df_pago[c] = 0 if c != 'EMPRESA' else ""
-                        
-                agg_pago = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TOTAL': 'sum'}
-                df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
-                
-                cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
-                cruce_1 = safe_fillna(cruce_1)
-                
-                cant_promedio = []
-                for a, p in zip(cruce_1['CANT EMPLEADOS_Apropiado'], cruce_1['CANT EMPLEADOS_Pagado']):
-                    a_val = pd.to_numeric(a, errors='coerce')
-                    p_val = pd.to_numeric(p, errors='coerce')
-                    a_val = a_val if not pd.isna(a_val) else 0
-                    p_val = p_val if not pd.isna(p_val) else 0
-                    
-                    if a_val > 0 and p_val > 0:
-                        cant_promedio.append(int(round((a_val + p_val) / 2)))
-                    elif a_val > 0:
-                        cant_promedio.append(int(a_val))
-                    else:
-                        cant_promedio.append(int(p_val))
-                        
-                df_export = pd.DataFrame()
-                df_export['NIT'] = cruce_1['NIT']
-                df_export['EMPRESA'] = cruce_1['EMPRESA_Apropiado'].where(cruce_1['EMPRESA_Apropiado'] != "", cruce_1['EMPRESA_Pagado'])
-                
-                df_export['CANT EMPLEADOS'] = cant_promedio
-                df_export['PERIODO'] = cruce_1.get('PERIODO', "")
-                
-                df_export['NOMINA\nAPROPIACION'] = cruce_1['NOMINA_Apropiado']
+        url_aprop_1 = st.text_input("Pega la URL de Drive - Apropiación:", key="url
