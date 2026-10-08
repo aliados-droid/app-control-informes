@@ -108,4 +108,10 @@ with tab1:
         url_aprop_1 = st.text_input("Pega la URL de Drive - Apropiación:", key="url_aprop1")
         ciudad = st.selectbox("Selecciona la región del pago:", ["Bogotá (NOMCONBOG)", "Eje Cafetero (NOMCONEJE)"])
     with col2:
-        url_pago_1 = st.text_input("Pega
+        url_pago_1 = st.text_input("Pega la URL de Drive - Aprobación de Pago:", key="url_pago1")
+    
+    if st.button("Generar Cruce Apropiación vs Pago", type="primary"):
+        if url_aprop_1 and url_pago_1:
+            try:
+                link_aprop = get_direct_excel_link(url_aprop_1)
+                link_pago = get_direct_excel
