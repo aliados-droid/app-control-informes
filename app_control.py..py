@@ -81,7 +81,7 @@ def guardar_en_drive(dataframe):
     try:
         cred_dict = json.loads(st.secrets["google_credentials"])
         gc = gspread.service_account_from_dict(cred_dict)
-        sh = gc.open_by_key("1LKPRUwGTBJLVZB7noEtt1oTfN-VhcG69")
+        sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
         worksheet = sh.worksheet("NOMINA")
         
         df_clean = safe_fillna(dataframe.copy())
