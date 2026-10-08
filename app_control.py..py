@@ -277,4 +277,25 @@ with tab3:
         if urls_validas and url_fic_mensual:
             try:
                 lista_df_fic = []
-                for url
+                for url in urls_validas:
+                    link_directo = get_direct_excel_link(url)
+                    df_temp = pd.read_excel(link_directo, sheet_name="EMPRESA")
+                    lista_df_fic.append(df_temp[["NIT", "FIC"]])
+                
+                df_fic_consol = pd.concat(lista_df_fic)
+                df_fic_agrupado = df_fic_consol.groupby("NIT")["FIC"].sum().reset_index()
+                df_fic_agrupado.rename(columns={"FIC": "FIC_APROPIADO"}, inplace=True)
+                
+                link_mensual = get_direct_excel_link(url_fic_mensual)
+                df_fic_mensual = pd.read_excel(link_mensual, sheet_name="EMPRESA")
+                
+                cruce_3 = pd.merge(df_fic_agrupado, df_fic_mensual, on="NIT", how="outer")
+                cruce_3 = safe_fillna(cruce_3)
+                
+                st.success("¡Cruce de FIC consolidado!")
+                st.dataframe(cruce_3.head())
+                st.download_button(label="📥 Descargar Reporte FIC", data=to_excel(cruce_3), file_name="Cruce_FIC.xlsx")
+            except Exception as e:
+                st.error(f"Error procesando. Detalle: {e}")
+        else:
+            st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
