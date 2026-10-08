@@ -84,7 +84,7 @@ def guardar_en_drive(dataframe):
         gc = gspread.service_account_from_dict(cred_dict)
         
         # 👇 ¡OJO AQUÍ! CAMBIA ESTO POR EL ID DE TU NUEVO ARCHIVO DE GOOGLE SHEETS 👇
-        sh = gc.open_by_key("AQUI_PEGA_TU_NUEVO_ID_DEL_SHEET")
+        sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
         
         worksheet = sh.worksheet("NOMINA")
         
