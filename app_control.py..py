@@ -53,6 +53,7 @@ def to_excel_tab1(df):
     worksheet.set_column('D:D', 20) # PERIODO
     worksheet.set_column('E:J', 18) # VALORES MONETARIOS
     worksheet.set_column('K:K', 15) # DIFERENCIA
+    worksheet.set_column('L:L', 20) # TIPO
     
     writer.close()
     return output.getvalue()
@@ -81,7 +82,10 @@ def guardar_en_drive(dataframe):
     try:
         cred_dict = json.loads(st.secrets["google_credentials"])
         gc = gspread.service_account_from_dict(cred_dict)
+        
+        # 👇 ¡OJO AQUÍ! CAMBIA ESTO POR EL ID DE TU NUEVO ARCHIVO DE GOOGLE SHEETS 👇
         sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
+        
         worksheet = sh.worksheet("NOMINA")
         
         df_clean = safe_fillna(dataframe.copy())
@@ -123,13 +127,13 @@ with tab1:
                 df_aprop.columns = df_aprop.columns.str.strip()
                 df_pago.columns = df_pago.columns.str.strip()
                 
-                # SE AGREGA 'PERIODO' A LAS COLUMNAS REQUERIDAS DE APROPIACIÓN
-                aprop_cols = ['NIT', 'EMPRESA', 'PERIODO', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']
+                # SE AGREGA 'PERIODO' Y 'TIPO' A LAS COLUMNAS REQUERIDAS DE APROPIACIÓN
+                aprop_cols = ['NIT', 'EMPRESA', 'PERIODO', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TIPO']
                 for c in aprop_cols:
                     if c not in df_aprop.columns:
-                        df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO'] else ""
+                        df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO', 'TIPO'] else ""
                         
-                agg_aprop = {'EMPRESA': 'first', 'PERIODO': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum'}
+                agg_aprop = {'EMPRESA': 'first', 'PERIODO': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TIPO': 'first'}
                 df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
                 
                 pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
@@ -161,135 +165,7 @@ with tab1:
                 df_export['NIT'] = cruce_1['NIT']
                 df_export['EMPRESA'] = cruce_1['EMPRESA_Apropiado'].where(cruce_1['EMPRESA_Apropiado'] != "", cruce_1['EMPRESA_Pagado'])
                 
-                # EL ORDEN SOLICITADO: C -> CANT EMPLEADOS | D -> PERIODO
                 df_export['CANT EMPLEADOS'] = cant_promedio
                 df_export['PERIODO'] = cruce_1.get('PERIODO', "")
                 
                 df_export['NOMINA\nAPROPIACION'] = cruce_1['NOMINA_Apropiado']
-                df_export['PRESTACIONES\nAPROPIACION'] = cruce_1['PRESTACIONES_Apropiado']
-                df_export['TOTAL APROPIACION'] = df_export['NOMINA\nAPROPIACION'] + df_export['PRESTACIONES\nAPROPIACION']
-                df_export['NOMINA\nAPROBACION'] = cruce_1['NOMINA_Pagado']
-                df_export['PRESTACIONES\nAPROBACION'] = cruce_1['PRESTACIONES_Pagado']
-                df_export['TOTAL APROBACION'] = cruce_1['TOTAL']
-                
-                dif = df_export['TOTAL APROPIACION'] - df_export['TOTAL APROBACION']
-                prestaciones_aprop = df_export['PRESTACIONES\nAPROPIACION']
-                df_export['DIFERENCIA'] = dif.where(~((dif < 0) & (abs(dif) <= prestaciones_aprop)), 0)
-                
-                st.session_state['df_cruce_1'] = df_export
-                
-                st.success("¡Cruce Consolidado Nacional generado con éxito!")
-                st.dataframe(df_export.head())
-            except Exception as e:
-                st.error(f"Error procesando los archivos. Detalle: {e}")
-        else:
-            st.warning("Por favor, pega ambas URLs para continuar.")
-            
-    if 'df_cruce_1' in st.session_state:
-        st.markdown("### ¿Qué deseas hacer con el resultado?")
-        btn_col1, btn_col2 = st.columns(2)
-        
-        with btn_col1:
-            st.download_button(
-                label="📥 Descargar CONSOLIDADO NACIONAL (Excel)", 
-                data=to_excel_tab1(st.session_state['df_cruce_1']), 
-                file_name="CONSOLIDADO NACIONAL.xlsx", 
-                mime="application/vnd.ms-excel",
-                use_container_width=True
-            )
-            
-        with btn_col2:
-            if st.button("☁️ Guardar histórico en Google Drive", use_container_width=True):
-                with st.spinner("Conectando con Google Drive..."):
-                    exito, mensaje = guardar_en_drive(st.session_state['df_cruce_1'])
-                    if exito:
-                        st.success(mensaje)
-                    else:
-                        st.error(mensaje)
-                        st.info("Asegúrate de que el robot tenga permisos de 'Editor' en tu archivo CONSOLIDADOS NACIONAL de Drive.")
-
-# ==========================================
-# GESTIÓN 2: SEGURIDAD SOCIAL
-# ==========================================
-with tab2:
-    st.header("Cruce: Seguridad Social")
-    st.markdown("Pega de 1 a 3 enlaces de apropiación.")
-    
-    col_ap1, col_ap2, col_ap3 = st.columns(3)
-    with col_ap1: url_ss_ap1 = st.text_input("URL Apropiación 1:", key="url_ss_ap1")
-    with col_ap2: url_ss_ap2 = st.text_input("URL Apropiación 2 (Opcional):", key="url_ss_ap2")
-    with col_ap3: url_ss_ap3 = st.text_input("URL Apropiación 3 (Opcional):", key="url_ss_ap3")
-        
-    url_ss_mensual = st.text_input("URL Reporte Mensual de Seguridad Social:", key="url_ss_mensual")
-    
-    if st.button("Generar Cruce Seguridad Social", type="primary"):
-        urls_validas = [u for u in [url_ss_ap1, url_ss_ap2, url_ss_ap3] if u.strip() != ""]
-        
-        if urls_validas and url_ss_mensual:
-            try:
-                lista_df_aprop = []
-                for url in urls_validas:
-                    link_directo = get_direct_excel_link(url)
-                    df_temp = pd.read_excel(link_directo, sheet_name="EMPRESA")
-                    lista_df_aprop.append(df_temp[["NIT", "SEGURIDAD SOCIAL"]])
-                
-                df_aprop_consol = pd.concat(lista_df_aprop)
-                df_aprop_agrupado = df_aprop_consol.groupby("NIT")["SEGURIDAD SOCIAL"].sum().reset_index()
-                df_aprop_agrupado.rename(columns={"SEGURIDAD SOCIAL": "SEGURIDAD_SOCIAL_APROPIADA"}, inplace=True)
-                
-                link_mensual = get_direct_excel_link(url_ss_mensual)
-                df_ss_mensual = pd.read_excel(link_mensual, sheet_name="SSGCON")
-                
-                cruce_2 = pd.merge(df_aprop_agrupado, df_ss_mensual, on="NIT", how="outer")
-                cruce_2 = safe_fillna(cruce_2)
-                
-                st.success("¡Cruce de Seguridad Social consolidado!")
-                st.dataframe(cruce_2.head())
-                st.download_button(label="📥 Descargar Reporte Seguridad Social", data=to_excel(cruce_2), file_name="Cruce_Seguridad_Social.xlsx")
-            except Exception as e:
-                st.error(f"Error procesando. Detalle: {e}")
-        else:
-            st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
-
-# ==========================================
-# GESTIÓN 3: FIC
-# ==========================================
-with tab3:
-    st.header("Cruce: FIC")
-    st.markdown("Pega de 1 a 3 enlaces de apropiación.")
-    
-    col_fic1, col_fic2, col_fic3 = st.columns(3)
-    with col_fic1: url_fic_ap1 = st.text_input("URL Apropiación 1:", key="url_fic_ap1")
-    with col_fic2: url_fic_ap2 = st.text_input("URL Apropiación 2 (Opcional):", key="url_fic_ap2")
-    with col_fic3: url_fic_ap3 = st.text_input("URL Apropiación 3 (Opcional):", key="url_fic_ap3")
-        
-    url_fic_mensual = st.text_input("URL Reporte Mensual de FIC:", key="url_fic_mensual")
-    
-    if st.button("Generar Cruce FIC", type="primary"):
-        urls_validas = [u for u in [url_fic_ap1, url_fic_ap2, url_fic_ap3] if u.strip() != ""]
-        
-        if urls_validas and url_fic_mensual:
-            try:
-                lista_df_fic = []
-                for url in urls_validas:
-                    link_directo = get_direct_excel_link(url)
-                    df_temp = pd.read_excel(link_directo, sheet_name="EMPRESA")
-                    lista_df_fic.append(df_temp[["NIT", "FIC"]])
-                
-                df_fic_consol = pd.concat(lista_df_fic)
-                df_fic_agrupado = df_fic_consol.groupby("NIT")["FIC"].sum().reset_index()
-                df_fic_agrupado.rename(columns={"FIC": "FIC_APROPIADO"}, inplace=True)
-                
-                link_mensual = get_direct_excel_link(url_fic_mensual)
-                df_fic_mensual = pd.read_excel(link_mensual, sheet_name="EMPRESA")
-                
-                cruce_3 = pd.merge(df_fic_agrupado, df_fic_mensual, on="NIT", how="outer")
-                cruce_3 = safe_fillna(cruce_3)
-                
-                st.success("¡Cruce de FIC consolidado!")
-                st.dataframe(cruce_3.head())
-                st.download_button(label="📥 Descargar Reporte FIC", data=to_excel(cruce_3), file_name="Cruce_FIC.xlsx")
-            except Exception as e:
-                st.error(f"Error procesando. Detalle: {e}")
-        else:
-            st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
