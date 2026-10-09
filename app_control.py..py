@@ -27,6 +27,7 @@ def to_excel_tab1(df):
     for row_num in range(1, len(df) + 1):
         excel_row = row_num + 1 
         worksheet.write_formula(row_num, 6, f'=E{excel_row}+F{excel_row}')
+        # Para el Excel descargable sí se mantiene el formato IF en inglés universal
         formula_dif = f'=IF(G{excel_row}-J{excel_row}<0, IF(ABS(G{excel_row}-J{excel_row})<=F{excel_row}, 0, G{excel_row}-J{excel_row}), G{excel_row}-J{excel_row})'
         worksheet.write_formula(row_num, 10, formula_dif)
         
@@ -143,23 +144,21 @@ def guardar_en_drive(dataframe, sheet_name):
         
         df_clean = safe_fillna(dataframe.copy())
         
-        # Calculamos en qué fila de Google Sheets vamos a empezar a pegar
         existing_data = worksheet.get_all_values()
         next_row = len(existing_data) + 1
         
         datos_para_enviar = df_clean.values.tolist()
         
-        # Inyectamos las fórmulas de Excel dinámicamente antes de enviar
         for i, row in enumerate(datos_para_enviar):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
-                row[10] = f'=IF(G{current_row}-J{current_row}<0, IF(ABS(G{current_row}-J{current_row})<=F{current_row}, 0, G{current_row}-J{current_row}), G{current_row}-J{current_row})'
+                # AJUSTE PARA GOOGLE SHEETS EN ESPAÑOL (Usando SI y punto y coma)
+                row[10] = f'=SI(G{current_row}-J{current_row}<0; SI(ABS(G{current_row}-J{current_row})<=F{current_row}; 0; G{current_row}-J{current_row}); G{current_row}-J{current_row})'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
                 row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
                 row[9] = f'=H{current_row}-I{current_row}'
         
-        # Le decimos a Google Sheets que lea los textos como fórmulas reales
         worksheet.append_rows(datos_para_enviar, value_input_option='USER_ENTERED')
         
         return True, f"¡Datos y fórmulas guardados exitosamente en Google Drive ({sheet_name})!"
