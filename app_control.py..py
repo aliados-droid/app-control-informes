@@ -143,8 +143,6 @@ def guardar_en_drive(dataframe, sheet_name):
         
         df_clean = safe_fillna(dataframe.copy())
         
-        # TRUCO MAESTRO: Leemos la columna A y contamos solo los datos que tengan texto
-        # Así evitamos las filas "fantasmas" que Google Sheets cree que están ocupadas
         col_a = worksheet.col_values(1)
         registros_reales = [x for x in col_a if str(x).strip() != ""]
         next_row = len(registros_reales) + 1
@@ -155,13 +153,11 @@ def guardar_en_drive(dataframe, sheet_name):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
-                # LA API SIEMPRE EXIGE INGLÉS. Google Sheets luego lo traduce a 'SI' visualmente.
                 row[10] = f'=IF(G{current_row}-J{current_row}<0, IF(ABS(G{current_row}-J{current_row})<=F{current_row}, 0, G{current_row}-J{current_row}), G{current_row}-J{current_row})'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
                 row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
                 row[9] = f'=H{current_row}-I{current_row}'
         
-        # FORZAMOS a que pegue en la celda exacta y bloqueamos la función automática de "append"
         try:
             worksheet.update(f"A{next_row}", datos_para_enviar, value_input_option='USER_ENTERED')
         except TypeError:
@@ -204,6 +200,11 @@ with tab1:
                 aprop_cols = ['NIT', 'EMPRESA', 'PERIODO', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TIPO']
                 for c in aprop_cols:
                     if c not in df_aprop.columns: df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO', 'TIPO'] else ""
+                
+                # LIMPIEZA ANTI-ERRORES PARA APROPIACIÓN
+                df_aprop['NIT'] = df_aprop['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']:
+                    df_aprop[col] = pd.to_numeric(df_aprop[col], errors='coerce').fillna(0)
                         
                 agg_aprop = {'EMPRESA': 'first', 'PERIODO': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TIPO': 'first'}
                 df_aprop_agrupado = df_aprop.groupby('NIT').agg(agg_aprop).reset_index()
@@ -211,6 +212,11 @@ with tab1:
                 pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
                 for c in pago_cols:
                     if c not in df_pago.columns: df_pago[c] = 0 if c != 'EMPRESA' else ""
+                
+                # LIMPIEZA ANTI-ERRORES PARA PAGOS
+                df_pago['NIT'] = df_pago['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']:
+                    df_pago[col] = pd.to_numeric(df_pago[col], errors='coerce').fillna(0)
                         
                 agg_pago = {'EMPRESA': 'first', 'CANT EMPLEADOS': 'sum', 'NOMINA': 'sum', 'PRESTACIONES': 'sum', 'TOTAL': 'sum'}
                 df_pago_agrupado = df_pago.groupby('NIT').agg(agg_pago).reset_index()
