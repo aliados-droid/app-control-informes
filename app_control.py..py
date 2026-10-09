@@ -153,6 +153,7 @@ def guardar_en_drive(dataframe, sheet_name):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
+                # SE REGRESÓ AL FORMATO INGLÉS: La API lo inyecta sin error, y Sheets te lo mostrará en español.
                 row[10] = f'=IF(G{current_row}-J{current_row}<0, IF(ABS(G{current_row}-J{current_row})<=F{current_row}, 0, G{current_row}-J{current_row}), G{current_row}-J{current_row})'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
                 row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
@@ -201,7 +202,6 @@ with tab1:
                 for c in aprop_cols:
                     if c not in df_aprop.columns: df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO', 'TIPO'] else ""
                 
-                # LIMPIEZA ANTI-ERRORES PARA APROPIACIÓN
                 df_aprop['NIT'] = df_aprop['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']:
                     df_aprop[col] = pd.to_numeric(df_aprop[col], errors='coerce').fillna(0)
@@ -213,7 +213,6 @@ with tab1:
                 for c in pago_cols:
                     if c not in df_pago.columns: df_pago[c] = 0 if c != 'EMPRESA' else ""
                 
-                # LIMPIEZA ANTI-ERRORES PARA PAGOS
                 df_pago['NIT'] = df_pago['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']:
                     df_pago[col] = pd.to_numeric(df_pago[col], errors='coerce').fillna(0)
