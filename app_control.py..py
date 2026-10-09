@@ -303,3 +303,155 @@ with tab2:
                     
                 df_m = pd.read_excel(get_direct_excel_link(url_ss_mensual), sheet_name="SSGCON")
                 df_m.columns = df_m.columns.str.strip()
+                for c in ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'PERIODO', 'SEGURIDAD SOCIAL', 'TIPO']:
+                    if c not in df_m.columns: df_m[c] = "" if c in ['EMPRESA', 'PERIODO', 'TIPO'] else 0
+                
+                df_m['NIT'] = df_m['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                df_m['SEGURIDAD SOCIAL'] = pd.to_numeric(df_m['SEGURIDAD SOCIAL'], errors='coerce').fillna(0)
+                df_m['CANT EMPLEADOS'] = pd.to_numeric(df_m['CANT EMPLEADOS'], errors='coerce').fillna(0)
+                        
+                df_m_agg = df_m.groupby('NIT').agg(agg_rules).reset_index()
+                df_m_agg.rename(columns={'SEGURIDAD SOCIAL': 'SS_MENSUAL', 'CANT EMPLEADOS': 'EMP_M'}, inplace=True)
+                
+                cruce = dfs_aprop[0]
+                if len(dfs_aprop) > 1: cruce = pd.merge(cruce, dfs_aprop[1], on='NIT', how='outer', suffixes=('', '_2'))
+                if len(dfs_aprop) > 2: cruce = pd.merge(cruce, dfs_aprop[2], on='NIT', how='outer', suffixes=('', '_3'))
+                cruce = pd.merge(cruce, df_m_agg, on='NIT', how='outer', suffixes=('', '_M'))
+                
+                emp_cols = [c for c in cruce.columns if 'EMPRESA' in c]
+                per_cols = [c for c in cruce.columns if 'PERIODO' in c]
+                tip_cols = [c for c in cruce.columns if 'TIPO' in c]
+                cant_cols = [c for c in cruce.columns if 'EMP_' in c]
+                
+                cruce['EMPRESA_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
+                cruce['PERIODO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
+                cruce['TIPO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
+                cruce['CANT_EMP_PROM'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                
+                df_export = pd.DataFrame()
+                df_export['NIT'] = cruce['NIT']
+                df_export['EMPRESA'] = cruce['EMPRESA_FINAL']
+                df_export['CANT EMPLEADOS'] = cruce['CANT_EMP_PROM']
+                df_export['PERIODO'] = cruce['PERIODO_FINAL']
+                df_export['SEGURIDAD SOCIAL AP1'] = pd.to_numeric(cruce['SS_AP1'], errors='coerce').fillna(0) if 'SS_AP1' in cruce else 0
+                df_export['SEGURIDAD SOCIAL AP2'] = pd.to_numeric(cruce['SS_AP2'], errors='coerce').fillna(0) if 'SS_AP2' in cruce else 0
+                df_export['SEGURIDAD SOCIAL AP3'] = pd.to_numeric(cruce['SS_AP3'], errors='coerce').fillna(0) if 'SS_AP3' in cruce else 0
+                df_export['TOTAL SS APROPIADO'] = df_export['SEGURIDAD SOCIAL AP1'] + df_export['SEGURIDAD SOCIAL AP2'] + df_export['SEGURIDAD SOCIAL AP3']
+                df_export['VALOR SEGURIDAD SOCIAL'] = pd.to_numeric(cruce['SS_MENSUAL'], errors='coerce').fillna(0) if 'SS_MENSUAL' in cruce else 0
+                df_export['DIFERENCIA'] = df_export['TOTAL SS APROPIADO'] - df_export['VALOR SEGURIDAD SOCIAL']
+                df_export['TIPO'] = cruce['TIPO_FINAL']
+                
+                st.session_state['df_cruce_2'] = df_export
+                st.success("¡Cruce de Seguridad Social consolidado!")
+                st.dataframe(df_export.head())
+            except Exception as e:
+                st.error(f"Error procesando. Detalle: {e}")
+        else:
+            st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
+
+    if 'df_cruce_2' in st.session_state:
+        st.markdown("### ¿Qué deseas hacer con el resultado?")
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            st.download_button("📥 Descargar Reporte (Excel)", to_excel_ss(st.session_state['df_cruce_2']), "Cruce_Seguridad_Social.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        with btn_col2:
+            if st.button("☁️ Guardar en hoja SEGURIDAD SOCIAL", use_container_width=True):
+                with st.spinner("Conectando con Google Drive..."):
+                    exito, mensaje = guardar_en_drive(st.session_state['df_cruce_2'], "SEGURIDAD SOCIAL")
+                    if exito: st.success(mensaje)
+                    else: st.error(mensaje)
+
+# ==========================================
+# GESTIÓN 3: FIC
+# ==========================================
+with tab3:
+    st.header("Cruce: FIC")
+    st.markdown("Pega de 1 a 3 enlaces de apropiación y tu enlace mensual de FIC.")
+    
+    col_fic1, col_fic2, col_fic3 = st.columns(3)
+    with col_fic1: url_fic_ap1 = st.text_input("URL Apropiación 1:", key="url_fic_ap1")
+    with col_fic2: url_fic_ap2 = st.text_input("URL Apropiación 2 (Opcional):", key="url_fic_ap2")
+    with col_fic3: url_fic_ap3 = st.text_input("URL Apropiación 3 (Opcional):", key="url_fic_ap3")
+        
+    url_fic_mensual = st.text_input("URL Reporte Mensual de FIC:", key="url_fic_mensual")
+    
+    if st.button("Generar Cruce FIC", type="primary"):
+        urls_validas = [u for u in [url_fic_ap1, url_fic_ap2, url_fic_ap3] if u.strip() != ""]
+        if urls_validas and url_fic_mensual:
+            try:
+                dfs_aprop = []
+                for i, url in enumerate(urls_validas):
+                    link = get_direct_excel_link(url)
+                    df_t = pd.read_excel(link, sheet_name="EMPRESA")
+                    df_t.columns = df_t.columns.str.strip()
+                    for c in ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'PERIODO', 'FIC', 'TIPO']:
+                        if c not in df_t.columns: df_t[c] = "" if c in ['EMPRESA', 'PERIODO', 'TIPO'] else 0
+                    
+                    df_t['NIT'] = df_t['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                    df_t['FIC'] = pd.to_numeric(df_t['FIC'], errors='coerce').fillna(0)
+                    df_t['CANT EMPLEADOS'] = pd.to_numeric(df_t['CANT EMPLEADOS'], errors='coerce').fillna(0)
+                            
+                    agg_rules = {'EMPRESA':'first', 'PERIODO':'first', 'TIPO':'first', 'CANT EMPLEADOS':'sum', 'FIC':'sum'}
+                    df_agg = df_t.groupby('NIT').agg(agg_rules).reset_index()
+                    df_agg.rename(columns={'FIC': f'FIC_AP{i+1}', 'CANT EMPLEADOS': f'EMP_AP{i+1}'}, inplace=True)
+                    dfs_aprop.append(df_agg)
+                    
+                df_m = pd.read_excel(get_direct_excel_link(url_fic_mensual), sheet_name="FICCON")
+                df_m.columns = df_m.columns.str.strip()
+                for c in ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'PERIODO', 'FIC', 'TIPO']:
+                    if c not in df_m.columns: df_m[c] = "" if c in ['EMPRESA', 'PERIODO', 'TIPO'] else 0
+                
+                df_m['NIT'] = df_m['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                df_m['FIC'] = pd.to_numeric(df_m['FIC'], errors='coerce').fillna(0)
+                df_m['CANT EMPLEADOS'] = pd.to_numeric(df_m['CANT EMPLEADOS'], errors='coerce').fillna(0)        
+                        
+                df_m_agg = df_m.groupby('NIT').agg(agg_rules).reset_index()
+                df_m_agg.rename(columns={'FIC': 'FIC_MENSUAL', 'CANT EMPLEADOS': 'EMP_M'}, inplace=True)
+                
+                cruce = dfs_aprop[0]
+                if len(dfs_aprop) > 1: cruce = pd.merge(cruce, dfs_aprop[1], on='NIT', how='outer', suffixes=('', '_2'))
+                if len(dfs_aprop) > 2: cruce = pd.merge(cruce, dfs_aprop[2], on='NIT', how='outer', suffixes=('', '_3'))
+                cruce = pd.merge(cruce, df_m_agg, on='NIT', how='outer', suffixes=('', '_M'))
+                
+                emp_cols = [c for c in cruce.columns if 'EMPRESA' in c]
+                per_cols = [c for c in cruce.columns if 'PERIODO' in c]
+                tip_cols = [c for c in cruce.columns if 'TIPO' in c]
+                cant_cols = [c for c in cruce.columns if 'EMP_' in c]
+                
+                cruce['EMPRESA_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
+                cruce['PERIODO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
+                cruce['TIPO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
+                cruce['CANT_EMP_PROM'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                
+                df_export = pd.DataFrame()
+                df_export['NIT'] = cruce['NIT']
+                df_export['EMPRESA'] = cruce['EMPRESA_FINAL']
+                df_export['CANT EMPLEADOS'] = cruce['CANT_EMP_PROM']
+                df_export['PERIODO'] = cruce['PERIODO_FINAL']
+                df_export['FIC AP1'] = pd.to_numeric(cruce['FIC_AP1'], errors='coerce').fillna(0) if 'FIC_AP1' in cruce else 0
+                df_export['FIC AP2'] = pd.to_numeric(cruce['FIC_AP2'], errors='coerce').fillna(0) if 'FIC_AP2' in cruce else 0
+                df_export['FIC AP3'] = pd.to_numeric(cruce['FIC_AP3'], errors='coerce').fillna(0) if 'FIC_AP3' in cruce else 0
+                df_export['TOTAL FIC APROPIADO'] = df_export['FIC AP1'] + df_export['FIC AP2'] + df_export['FIC AP3']
+                df_export['VALOR FIC'] = pd.to_numeric(cruce['FIC_MENSUAL'], errors='coerce').fillna(0) if 'FIC_MENSUAL' in cruce else 0
+                df_export['DIFERENCIA'] = df_export['TOTAL FIC APROPIADO'] - df_export['VALOR FIC']
+                df_export['TIPO'] = cruce['TIPO_FINAL']
+                
+                st.session_state['df_cruce_3'] = df_export
+                st.success("¡Cruce de FIC consolidado!")
+                st.dataframe(df_export.head())
+            except Exception as e:
+                st.error(f"Error procesando. Detalle: {e}")
+        else:
+            st.warning("Pega al menos 1 URL de apropiación y el reporte mensual.")
+
+    if 'df_cruce_3' in st.session_state:
+        st.markdown("### ¿Qué deseas hacer con el resultado?")
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            st.download_button("📥 Descargar Reporte (Excel)", to_excel_fic(st.session_state['df_cruce_3']), "Cruce_FIC.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        with btn_col2:
+            if st.button("☁️ Guardar en hoja FIC", use_container_width=True):
+                with st.spinner("Conectando con Google Drive..."):
+                    exito, mensaje = guardar_en_drive(st.session_state['df_cruce_3'], "FIC")
+                    if exito: st.success(mensaje)
+                    else: st.error(mensaje)
