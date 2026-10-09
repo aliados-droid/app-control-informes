@@ -27,7 +27,6 @@ def to_excel_tab1(df):
     for row_num in range(1, len(df) + 1):
         excel_row = row_num + 1 
         worksheet.write_formula(row_num, 6, f'=E{excel_row}+F{excel_row}')
-        # NUEVA FÓRMULA DIRECTA: NOMINA APROPIACIÓN - NOMINA APROBACIÓN
         formula_dif = f'=E{excel_row}-H{excel_row}'
         worksheet.write_formula(row_num, 10, formula_dif)
         
@@ -44,54 +43,72 @@ def to_excel_tab1(df):
 def to_excel_ss(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='SEGURIDAD SOCIAL')
+    
+    # Extraemos las fórmulas ocultas y limpiamos el dataframe para Excel
+    ap1_list = df['AP1_REF'].tolist()
+    ap2_list = df['AP2_REF'].tolist()
+    ap3_list = df['AP3_REF'].tolist()
+    df_clean = df.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF'])
+    
+    df_clean.to_excel(writer, index=False, sheet_name='SEGURIDAD SOCIAL')
     workbook = writer.book
     worksheet = writer.sheets['SEGURIDAD SOCIAL']
     
     header_format = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
     worksheet.set_row(0, 35) 
     
-    for col_num, value in enumerate(df.columns.values):
+    for col_num, value in enumerate(df_clean.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    for row_num in range(1, len(df) + 1):
+    for row_num in range(1, len(df_clean) + 1):
         excel_row = row_num + 1 
-        worksheet.write_formula(row_num, 7, f'=E{excel_row}+F{excel_row}+G{excel_row}')
-        worksheet.write_formula(row_num, 9, f'=H{excel_row}-I{excel_row}')
+        # Columna E (Índice 4): Suma literal de los 3 enlaces
+        worksheet.write_formula(row_num, 4, f'={ap1_list[row_num-1]}+{ap2_list[row_num-1]}+{ap3_list[row_num-1]}')
+        # Columna G (Índice 6): Diferencia (E - F)
+        worksheet.write_formula(row_num, 6, f'=E{excel_row}-F{excel_row}')
         
     worksheet.set_column('A:A', 15) 
     worksheet.set_column('B:B', 35) 
     worksheet.set_column('C:C', 16) 
     worksheet.set_column('D:D', 20) 
-    worksheet.set_column('E:J', 18) 
-    worksheet.set_column('K:K', 20) 
+    worksheet.set_column('E:G', 18) 
+    worksheet.set_column('H:H', 20) 
     writer.close()
     return output.getvalue()
 
 def to_excel_fic(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='FIC')
+    
+    # Extraemos las fórmulas ocultas y limpiamos el dataframe para Excel
+    ap1_list = df['AP1_REF'].tolist()
+    ap2_list = df['AP2_REF'].tolist()
+    ap3_list = df['AP3_REF'].tolist()
+    df_clean = df.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF'])
+    
+    df_clean.to_excel(writer, index=False, sheet_name='FIC')
     workbook = writer.book
     worksheet = writer.sheets['FIC']
     
     header_format = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
     worksheet.set_row(0, 35) 
     
-    for col_num, value in enumerate(df.columns.values):
+    for col_num, value in enumerate(df_clean.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    for row_num in range(1, len(df) + 1):
+    for row_num in range(1, len(df_clean) + 1):
         excel_row = row_num + 1 
-        worksheet.write_formula(row_num, 7, f'=E{excel_row}+F{excel_row}+G{excel_row}')
-        worksheet.write_formula(row_num, 9, f'=H{excel_row}-I{excel_row}')
+        # Columna E (Índice 4): Suma literal de los 3 enlaces
+        worksheet.write_formula(row_num, 4, f'={ap1_list[row_num-1]}+{ap2_list[row_num-1]}+{ap3_list[row_num-1]}')
+        # Columna G (Índice 6): Diferencia (E - F)
+        worksheet.write_formula(row_num, 6, f'=E{excel_row}-F{excel_row}')
         
     worksheet.set_column('A:A', 15) 
     worksheet.set_column('B:B', 35) 
     worksheet.set_column('C:C', 16) 
     worksheet.set_column('D:D', 20) 
-    worksheet.set_column('E:J', 18) 
-    worksheet.set_column('K:K', 20) 
+    worksheet.set_column('E:G', 18) 
+    worksheet.set_column('H:H', 20) 
     writer.close()
     return output.getvalue()
 
@@ -142,7 +159,16 @@ def guardar_en_drive(dataframe, sheet_name):
         sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
         worksheet = sh.worksheet(sheet_name)
         
-        df_clean = safe_fillna(dataframe.copy())
+        df_copy = dataframe.copy()
+        
+        # Si es botón 2 o 3, extraemos las fórmulas ocultas y dejamos el DF limpio
+        if sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
+            ap1_list = df_copy['AP1_REF'].tolist()
+            ap2_list = df_copy['AP2_REF'].tolist()
+            ap3_list = df_copy['AP3_REF'].tolist()
+            df_clean = safe_fillna(df_copy.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']))
+        else:
+            df_clean = safe_fillna(df_copy)
         
         col_a = worksheet.col_values(1)
         registros_reales = [x for x in col_a if str(x).strip() != ""]
@@ -154,11 +180,12 @@ def guardar_en_drive(dataframe, sheet_name):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
-                # NUEVA FÓRMULA DIRECTA PARA GOOGLE DRIVE
                 row[10] = f'=E{current_row}-H{current_row}'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
-                row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
-                row[9] = f'=H{current_row}-I{current_row}'
+                # Columna E (Índice 4): Suma literal de los 3 enlaces
+                row[4] = f'={ap1_list[i]}+{ap2_list[i]}+{ap3_list[i]}'
+                # Columna G (Índice 6): Diferencia (E - F)
+                row[6] = f'=E{current_row}-F{current_row}'
         
         try:
             worksheet.update(f"A{next_row}", datos_para_enviar, value_input_option='USER_ENTERED')
@@ -174,7 +201,7 @@ st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO
+# GESTIÓN 1: APROPIACIÓN VS PAGO (INTACTO)
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -253,9 +280,7 @@ with tab1:
                 df_export['PRESTACIONES\nAPROBACION'] = pd.to_numeric(cruce_1.get('PRESTACIONES_Pagado', 0), errors='coerce').fillna(0)
                 df_export['TOTAL APROBACION'] = pd.to_numeric(cruce_1.get('TOTAL', 0), errors='coerce').fillna(0)
                 
-                # NUEVO CÁLCULO DIRECTO PARA LA VISTA EN PANTALLA
                 df_export['DIFERENCIA'] = df_export['NOMINA\nAPROPIACION'] - df_export['NOMINA\nAPROBACION']
-                
                 df_export['TIPO'] = cruce_1.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
                 st.session_state['df_cruce_1'] = df_export
@@ -335,27 +360,31 @@ with tab2:
                 tip_cols = [c for c in cruce.columns if 'TIPO' in c]
                 cant_cols = [c for c in cruce.columns if 'EMP_' in c]
                 
-                cruce['EMPRESA_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
-                cruce['PERIODO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
-                cruce['TIPO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
-                cruce['CANT_EMP_PROM'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                # VARIABLES OCULTAS PARA FÓRMULA LECTURA
+                ap1_num = pd.to_numeric(cruce.get('SS_AP1', 0), errors='coerce').fillna(0)
+                ap2_num = pd.to_numeric(cruce.get('SS_AP2', 0), errors='coerce').fillna(0)
+                ap3_num = pd.to_numeric(cruce.get('SS_AP3', 0), errors='coerce').fillna(0)
                 
                 df_export = pd.DataFrame()
                 df_export['NIT'] = cruce['NIT']
-                df_export['EMPRESA'] = cruce['EMPRESA_FINAL']
-                df_export['CANT EMPLEADOS'] = cruce['CANT_EMP_PROM']
-                df_export['PERIODO'] = cruce['PERIODO_FINAL']
-                df_export['SEGURIDAD SOCIAL AP1'] = pd.to_numeric(cruce['SS_AP1'], errors='coerce').fillna(0) if 'SS_AP1' in cruce else 0
-                df_export['SEGURIDAD SOCIAL AP2'] = pd.to_numeric(cruce['SS_AP2'], errors='coerce').fillna(0) if 'SS_AP2' in cruce else 0
-                df_export['SEGURIDAD SOCIAL AP3'] = pd.to_numeric(cruce['SS_AP3'], errors='coerce').fillna(0) if 'SS_AP3' in cruce else 0
-                df_export['TOTAL SS APROPIADO'] = df_export['SEGURIDAD SOCIAL AP1'] + df_export['SEGURIDAD SOCIAL AP2'] + df_export['SEGURIDAD SOCIAL AP3']
-                df_export['VALOR SEGURIDAD SOCIAL'] = pd.to_numeric(cruce['SS_MENSUAL'], errors='coerce').fillna(0) if 'SS_MENSUAL' in cruce else 0
-                df_export['DIFERENCIA'] = df_export['TOTAL SS APROPIADO'] - df_export['VALOR SEGURIDAD SOCIAL']
-                df_export['TIPO'] = cruce['TIPO_FINAL']
+                df_export['EMPRESA'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
+                df_export['CANT EMPLEADOS'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                df_export['PERIODO'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
+                
+                df_export['TOTAL SEGURIDAD SOCIAL APROPIADO'] = ap1_num + ap2_num + ap3_num
+                df_export['VALOR SEGURIDAD SOCIAL'] = pd.to_numeric(cruce.get('SS_MENSUAL', 0), errors='coerce').fillna(0)
+                df_export['DIFERENCIA'] = df_export['TOTAL SEGURIDAD SOCIAL APROPIADO'] - df_export['VALOR SEGURIDAD SOCIAL']
+                df_export['TIPO'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
+                
+                # CELDAS OCULTAS CON EL DATO PARA INYECTAR LA SUMA =A+B+C EN EXCEL Y DRIVE
+                df_export['AP1_REF'] = ap1_num.astype(int).astype(str)
+                df_export['AP2_REF'] = ap2_num.astype(int).astype(str)
+                df_export['AP3_REF'] = ap3_num.astype(int).astype(str)
                 
                 st.session_state['df_cruce_2'] = df_export
                 st.success("¡Cruce de Seguridad Social consolidado!")
-                st.dataframe(df_export.head())
+                # Mostramos en pantalla el dataframe SIN las celdas ocultas (8 columnas exactas)
+                st.dataframe(df_export.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']).head())
             except Exception as e:
                 st.error(f"Error procesando. Detalle: {e}")
         else:
@@ -430,27 +459,31 @@ with tab3:
                 tip_cols = [c for c in cruce.columns if 'TIPO' in c]
                 cant_cols = [c for c in cruce.columns if 'EMP_' in c]
                 
-                cruce['EMPRESA_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
-                cruce['PERIODO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
-                cruce['TIPO_FINAL'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
-                cruce['CANT_EMP_PROM'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                # VARIABLES OCULTAS PARA FÓRMULA LECTURA
+                ap1_num = pd.to_numeric(cruce.get('FIC_AP1', 0), errors='coerce').fillna(0)
+                ap2_num = pd.to_numeric(cruce.get('FIC_AP2', 0), errors='coerce').fillna(0)
+                ap3_num = pd.to_numeric(cruce.get('FIC_AP3', 0), errors='coerce').fillna(0)
                 
                 df_export = pd.DataFrame()
                 df_export['NIT'] = cruce['NIT']
-                df_export['EMPRESA'] = cruce['EMPRESA_FINAL']
-                df_export['CANT EMPLEADOS'] = cruce['CANT_EMP_PROM']
-                df_export['PERIODO'] = cruce['PERIODO_FINAL']
-                df_export['FIC AP1'] = pd.to_numeric(cruce['FIC_AP1'], errors='coerce').fillna(0) if 'FIC_AP1' in cruce else 0
-                df_export['FIC AP2'] = pd.to_numeric(cruce['FIC_AP2'], errors='coerce').fillna(0) if 'FIC_AP2' in cruce else 0
-                df_export['FIC AP3'] = pd.to_numeric(cruce['FIC_AP3'], errors='coerce').fillna(0) if 'FIC_AP3' in cruce else 0
-                df_export['TOTAL FIC APROPIADO'] = df_export['FIC AP1'] + df_export['FIC AP2'] + df_export['FIC AP3']
-                df_export['VALOR FIC'] = pd.to_numeric(cruce['FIC_MENSUAL'], errors='coerce').fillna(0) if 'FIC_MENSUAL' in cruce else 0
-                df_export['DIFERENCIA'] = df_export['TOTAL FIC APROPIADO'] - df_export['VALOR FIC']
-                df_export['TIPO'] = cruce['TIPO_FINAL']
+                df_export['EMPRESA'] = cruce.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
+                df_export['CANT EMPLEADOS'] = cruce.apply(lambda r: calc_promedio_empleados(r, cant_cols), axis=1)
+                df_export['PERIODO'] = cruce.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
+                
+                df_export['TOTAL FIC'] = ap1_num + ap2_num + ap3_num
+                df_export['FIC'] = pd.to_numeric(cruce.get('FIC_MENSUAL', 0), errors='coerce').fillna(0)
+                df_export['DIFERENCIA'] = df_export['TOTAL FIC'] - df_export['FIC']
+                df_export['TIPO'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
+                
+                # CELDAS OCULTAS CON EL DATO PARA INYECTAR LA SUMA =A+B+C EN EXCEL Y DRIVE
+                df_export['AP1_REF'] = ap1_num.astype(int).astype(str)
+                df_export['AP2_REF'] = ap2_num.astype(int).astype(str)
+                df_export['AP3_REF'] = ap3_num.astype(int).astype(str)
                 
                 st.session_state['df_cruce_3'] = df_export
                 st.success("¡Cruce de FIC consolidado!")
-                st.dataframe(df_export.head())
+                # Mostramos en pantalla el dataframe SIN las celdas ocultas (8 columnas exactas)
+                st.dataframe(df_export.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']).head())
             except Exception as e:
                 st.error(f"Error procesando. Detalle: {e}")
         else:
