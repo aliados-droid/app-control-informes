@@ -27,7 +27,8 @@ def to_excel_tab1(df):
     for row_num in range(1, len(df) + 1):
         excel_row = row_num + 1 
         worksheet.write_formula(row_num, 6, f'=E{excel_row}+F{excel_row}')
-        formula_dif = f'=IF(G{excel_row}-J{excel_row}<0, IF(ABS(G{excel_row}-J{excel_row})<=F{excel_row}, 0, G{excel_row}-J{excel_row}), G{excel_row}-J{excel_row})'
+        # NUEVA FÓRMULA DIRECTA: NOMINA APROPIACIÓN - NOMINA APROBACIÓN
+        formula_dif = f'=E{excel_row}-H{excel_row}'
         worksheet.write_formula(row_num, 10, formula_dif)
         
     worksheet.set_column('A:A', 15) 
@@ -153,7 +154,8 @@ def guardar_en_drive(dataframe, sheet_name):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
-                row[10] = f'=IF(G{current_row}-J{current_row}<0, IF(ABS(G{current_row}-J{current_row})<=F{current_row}, 0, G{current_row}-J{current_row}), G{current_row}-J{current_row})'
+                # NUEVA FÓRMULA DIRECTA PARA GOOGLE DRIVE
+                row[10] = f'=E{current_row}-H{current_row}'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
                 row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
                 row[9] = f'=H{current_row}-I{current_row}'
@@ -243,7 +245,6 @@ with tab1:
                 df_export['CANT EMPLEADOS'] = cant_promedio
                 df_export['PERIODO'] = cruce_1.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
                 
-                # FORZAMOS a que sean números 100% puros antes de cualquier matemática (Solución del error)
                 df_export['NOMINA\nAPROPIACION'] = pd.to_numeric(cruce_1.get('NOMINA_Apropiado', 0), errors='coerce').fillna(0)
                 df_export['PRESTACIONES\nAPROPIACION'] = pd.to_numeric(cruce_1.get('PRESTACIONES_Apropiado', 0), errors='coerce').fillna(0)
                 df_export['TOTAL APROPIACION'] = df_export['NOMINA\nAPROPIACION'] + df_export['PRESTACIONES\nAPROPIACION']
@@ -252,9 +253,8 @@ with tab1:
                 df_export['PRESTACIONES\nAPROBACION'] = pd.to_numeric(cruce_1.get('PRESTACIONES_Pagado', 0), errors='coerce').fillna(0)
                 df_export['TOTAL APROBACION'] = pd.to_numeric(cruce_1.get('TOTAL', 0), errors='coerce').fillna(0)
                 
-                dif = df_export['TOTAL APROPIACION'] - df_export['TOTAL APROBACION']
-                prestaciones_aprop = df_export['PRESTACIONES\nAPROPIACION']
-                df_export['DIFERENCIA'] = dif.where(~((dif < 0) & (abs(dif) <= prestaciones_aprop)), 0)
+                # NUEVO CÁLCULO DIRECTO PARA LA VISTA EN PANTALLA
+                df_export['DIFERENCIA'] = df_export['NOMINA\nAPROPIACION'] - df_export['NOMINA\nAPROBACION']
                 
                 df_export['TIPO'] = cruce_1.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
