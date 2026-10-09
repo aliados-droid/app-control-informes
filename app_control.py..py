@@ -153,7 +153,6 @@ def guardar_en_drive(dataframe, sheet_name):
             current_row = next_row + i
             if sheet_name == "NOMINA":
                 row[6] = f'=E{current_row}+F{current_row}'
-                # SE REGRESÓ AL FORMATO INGLÉS: La API lo inyecta sin error, y Sheets te lo mostrará en español.
                 row[10] = f'=IF(G{current_row}-J{current_row}<0, IF(ABS(G{current_row}-J{current_row})<=F{current_row}, 0, G{current_row}-J{current_row}), G{current_row}-J{current_row})'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
                 row[7] = f'=E{current_row}+F{current_row}+G{current_row}'
@@ -200,7 +199,7 @@ with tab1:
                 
                 aprop_cols = ['NIT', 'EMPRESA', 'PERIODO', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TIPO']
                 for c in aprop_cols:
-                    if c not in df_aprop.columns: df_aprop[c] = 0 if c not in ['EMPRESA', 'PERIODO', 'TIPO'] else ""
+                    if c not in df_aprop.columns: df_aprop[c] = "" if c in ['EMPRESA', 'PERIODO', 'TIPO'] else 0
                 
                 df_aprop['NIT'] = df_aprop['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES']:
@@ -211,7 +210,7 @@ with tab1:
                 
                 pago_cols = ['NIT', 'EMPRESA', 'CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']
                 for c in pago_cols:
-                    if c not in df_pago.columns: df_pago[c] = 0 if c != 'EMPRESA' else ""
+                    if c not in df_pago.columns: df_pago[c] = "" if c == 'EMPRESA' else 0
                 
                 df_pago['NIT'] = df_pago['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 for col in ['CANT EMPLEADOS', 'NOMINA', 'PRESTACIONES', 'TOTAL']:
@@ -223,33 +222,41 @@ with tab1:
                 cruce_1 = pd.merge(df_aprop_agrupado, df_pago_agrupado, on="NIT", how="outer", suffixes=('_Apropiado', '_Pagado'))
                 cruce_1 = safe_fillna(cruce_1)
                 
+                emp_cols = [c for c in cruce_1.columns if 'EMPRESA' in c]
+                per_cols = [c for c in cruce_1.columns if 'PERIODO' in c]
+                tip_cols = [c for c in cruce_1.columns if 'TIPO' in c]
+                
+                cant_aprop_col = 'CANT EMPLEADOS_Apropiado' if 'CANT EMPLEADOS_Apropiado' in cruce_1 else 'CANT EMPLEADOS'
+                cant_pago_col = 'CANT EMPLEADOS_Pagado' if 'CANT EMPLEADOS_Pagado' in cruce_1 else 'CANT EMPLEADOS'
+                
                 cant_promedio = []
-                for a, p in zip(cruce_1['CANT EMPLEADOS_Apropiado'], cruce_1['CANT EMPLEADOS_Pagado']):
-                    a_val = pd.to_numeric(a, errors='coerce')
-                    p_val = pd.to_numeric(p, errors='coerce')
-                    a_val = a_val if not pd.isna(a_val) else 0
-                    p_val = p_val if not pd.isna(p_val) else 0
-                    
+                for a, p in zip(cruce_1.get(cant_aprop_col, [0]*len(cruce_1)), cruce_1.get(cant_pago_col, [0]*len(cruce_1))):
+                    a_val = pd.to_numeric(a, errors='coerce'); a_val = a_val if not pd.isna(a_val) else 0
+                    p_val = pd.to_numeric(p, errors='coerce'); p_val = p_val if not pd.isna(p_val) else 0
                     if a_val > 0 and p_val > 0: cant_promedio.append(int(round((a_val + p_val) / 2)))
                     elif a_val > 0: cant_promedio.append(int(a_val))
                     else: cant_promedio.append(int(p_val))
                         
                 df_export = pd.DataFrame()
                 df_export['NIT'] = cruce_1['NIT']
-                df_export['EMPRESA'] = cruce_1['EMPRESA_Apropiado'].where(cruce_1['EMPRESA_Apropiado'] != "", cruce_1['EMPRESA_Pagado'])
+                df_export['EMPRESA'] = cruce_1.apply(lambda r: coalesce_strings(r, emp_cols), axis=1)
                 df_export['CANT EMPLEADOS'] = cant_promedio
-                df_export['PERIODO'] = cruce_1.get('PERIODO', "")
-                df_export['NOMINA\nAPROPIACION'] = cruce_1['NOMINA_Apropiado']
-                df_export['PRESTACIONES\nAPROPIACION'] = cruce_1['PRESTACIONES_Apropiado']
+                df_export['PERIODO'] = cruce_1.apply(lambda r: coalesce_strings(r, per_cols), axis=1)
+                
+                # FORZAMOS a que sean números 100% puros antes de cualquier matemática (Solución del error)
+                df_export['NOMINA\nAPROPIACION'] = pd.to_numeric(cruce_1.get('NOMINA_Apropiado', 0), errors='coerce').fillna(0)
+                df_export['PRESTACIONES\nAPROPIACION'] = pd.to_numeric(cruce_1.get('PRESTACIONES_Apropiado', 0), errors='coerce').fillna(0)
                 df_export['TOTAL APROPIACION'] = df_export['NOMINA\nAPROPIACION'] + df_export['PRESTACIONES\nAPROPIACION']
-                df_export['NOMINA\nAPROBACION'] = cruce_1['NOMINA_Pagado']
-                df_export['PRESTACIONES\nAPROBACION'] = cruce_1['PRESTACIONES_Pagado']
-                df_export['TOTAL APROBACION'] = cruce_1['TOTAL']
+                
+                df_export['NOMINA\nAPROBACION'] = pd.to_numeric(cruce_1.get('NOMINA_Pagado', 0), errors='coerce').fillna(0)
+                df_export['PRESTACIONES\nAPROBACION'] = pd.to_numeric(cruce_1.get('PRESTACIONES_Pagado', 0), errors='coerce').fillna(0)
+                df_export['TOTAL APROBACION'] = pd.to_numeric(cruce_1.get('TOTAL', 0), errors='coerce').fillna(0)
                 
                 dif = df_export['TOTAL APROPIACION'] - df_export['TOTAL APROBACION']
                 prestaciones_aprop = df_export['PRESTACIONES\nAPROPIACION']
                 df_export['DIFERENCIA'] = dif.where(~((dif < 0) & (abs(dif) <= prestaciones_aprop)), 0)
-                df_export['TIPO'] = cruce_1.get('TIPO', "")
+                
+                df_export['TIPO'] = cruce_1.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
                 st.session_state['df_cruce_1'] = df_export
                 st.success("¡Cruce Consolidado Nacional generado con éxito!")
