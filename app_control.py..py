@@ -36,7 +36,7 @@ def to_excel_tab1(df):
     worksheet.set_column('D:D', 20) 
     worksheet.set_column('E:J', 18) 
     worksheet.set_column('K:K', 15) 
-    worksheet.set_column('L:L', 20) 
+    worksheet.set_column('L:M', 20) # L=TIPO, M=CIUDAD
     writer.close()
     return output.getvalue()
 
@@ -44,21 +44,21 @@ def to_excel_ss(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    df.to_excel(writer, index=False, sheet_name='SEGURIDAD SOCIAL')
+    df_clean = df.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF'])
+    
+    df_clean.to_excel(writer, index=False, sheet_name='SEGURIDAD SOCIAL')
     workbook = writer.book
     worksheet = writer.sheets['SEGURIDAD SOCIAL']
     
     header_format = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
     worksheet.set_row(0, 35) 
     
-    for col_num, value in enumerate(df.columns.values):
+    for col_num, value in enumerate(df_clean.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    for row_num in range(1, len(df) + 1):
+    for row_num in range(1, len(df_clean) + 1):
         excel_row = row_num + 1 
-        # Columna I (Índice 8): TOTAL = F + G + H
         worksheet.write_formula(row_num, 8, f'=F{excel_row}+G{excel_row}+H{excel_row}')
-        # Columna J (Índice 9): DIFERENCIA = I - E
         worksheet.write_formula(row_num, 9, f'=I{excel_row}-E{excel_row}')
         
     worksheet.set_column('A:A', 15) 
@@ -66,7 +66,7 @@ def to_excel_ss(df):
     worksheet.set_column('C:C', 16) 
     worksheet.set_column('D:D', 20) 
     worksheet.set_column('E:J', 18) 
-    worksheet.set_column('K:K', 20) 
+    worksheet.set_column('K:L', 20) # K=TIPO, L=CIUDAD
     writer.close()
     return output.getvalue()
 
@@ -74,21 +74,21 @@ def to_excel_fic(df):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    df.to_excel(writer, index=False, sheet_name='FIC')
+    df_clean = df.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF'])
+    
+    df_clean.to_excel(writer, index=False, sheet_name='FIC')
     workbook = writer.book
     worksheet = writer.sheets['FIC']
     
     header_format = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
     worksheet.set_row(0, 35) 
     
-    for col_num, value in enumerate(df.columns.values):
+    for col_num, value in enumerate(df_clean.columns.values):
         worksheet.write(0, col_num, value, header_format)
         
-    for row_num in range(1, len(df) + 1):
+    for row_num in range(1, len(df_clean) + 1):
         excel_row = row_num + 1 
-        # Columna I (Índice 8): TOTAL = F + G + H
         worksheet.write_formula(row_num, 8, f'=F{excel_row}+G{excel_row}+H{excel_row}')
-        # Columna J (Índice 9): DIFERENCIA = I - E
         worksheet.write_formula(row_num, 9, f'=I{excel_row}-E{excel_row}')
         
     worksheet.set_column('A:A', 15) 
@@ -96,7 +96,7 @@ def to_excel_fic(df):
     worksheet.set_column('C:C', 16) 
     worksheet.set_column('D:D', 20) 
     worksheet.set_column('E:J', 18) 
-    worksheet.set_column('K:K', 20) 
+    worksheet.set_column('K:L', 20) # K=TIPO, L=CIUDAD
     writer.close()
     return output.getvalue()
 
@@ -147,7 +147,15 @@ def guardar_en_drive(dataframe, sheet_name):
         sh = gc.open_by_key("1W0zekg36sXn3z_n4Vpa976yS59lLhLab4T9BwzU3G_s")
         worksheet = sh.worksheet(sheet_name)
         
-        df_clean = safe_fillna(dataframe.copy())
+        df_copy = dataframe.copy()
+        
+        if sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
+            ap1_list = df_copy['AP1_REF'].tolist()
+            ap2_list = df_copy['AP2_REF'].tolist()
+            ap3_list = df_copy['AP3_REF'].tolist()
+            df_clean = safe_fillna(df_copy.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']))
+        else:
+            df_clean = safe_fillna(df_copy)
         
         col_a = worksheet.col_values(1)
         registros_reales = [x for x in col_a if str(x).strip() != ""]
@@ -161,9 +169,7 @@ def guardar_en_drive(dataframe, sheet_name):
                 row[6] = f'=E{current_row}+F{current_row}'
                 row[10] = f'=E{current_row}-H{current_row}'
             elif sheet_name in ["SEGURIDAD SOCIAL", "FIC"]:
-                # Columna I (Índice 8): TOTAL = F + G + H
                 row[8] = f'=F{current_row}+G{current_row}+H{current_row}'
-                # Columna J (Índice 9): DIFERENCIA = I - E
                 row[9] = f'=I{current_row}-E{current_row}'
         
         try:
@@ -180,7 +186,7 @@ st.info("⚠️ Importante: Asegúrate de que los enlaces de Google Drive tengan
 tab1, tab2, tab3 = st.tabs(["1️⃣ Apropiación vs Pago", "2️⃣ Seguridad Social", "3️⃣ FIC"])
 
 # ==========================================
-# GESTIÓN 1: APROPIACIÓN VS PAGO (INTACTO)
+# GESTIÓN 1: APROPIACIÓN VS PAGO
 # ==========================================
 with tab1:
     st.header("Cruce: Apropiación vs Pago")
@@ -262,6 +268,9 @@ with tab1:
                 df_export['DIFERENCIA'] = df_export['NOMINA\nAPROPIACION'] - df_export['NOMINA\nAPROBACION']
                 df_export['TIPO'] = cruce_1.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
+                # NUEVA COLUMNA CIUDAD (Inyectada al final de la tabla)
+                df_export['CIUDAD'] = "BOGOTA - CALI" if "Bogotá" in ciudad else "EJE CAFETERO"
+                
                 st.session_state['df_cruce_1'] = df_export
                 st.success("¡Cruce Consolidado Nacional generado con éxito!")
                 st.dataframe(df_export.head())
@@ -294,7 +303,12 @@ with tab2:
     with col_ap2: url_ss_ap2 = st.text_input("URL Apropiación 2 (Opcional):", key="url_ss_ap2")
     with col_ap3: url_ss_ap3 = st.text_input("URL Apropiación 3 (Opcional):", key="url_ss_ap3")
         
-    url_ss_mensual = st.text_input("URL Reporte Mensual de Seguridad Social:", key="url_ss_mensual")
+    # SE AGREGÓ EL SELECTOR DE CIUDAD TAMBIÉN AQUÍ PARA ALIMENTAR LA COLUMNA NUEVA
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        url_ss_mensual = st.text_input("URL Reporte Mensual de Seguridad Social:", key="url_ss_mensual")
+    with col_m2:
+        ciudad_2 = st.selectbox("Selecciona la región del pago:", ["Bogotá (NOMCONBOG)", "Eje Cafetero (NOMCONEJE)"], key="ciudad_tab2")
     
     if st.button("Generar Cruce Seguridad Social", type="primary"):
         urls_validas = [u for u in [url_ss_ap1, url_ss_ap2, url_ss_ap3] if u.strip() != ""]
@@ -306,7 +320,6 @@ with tab2:
                     df_t = pd.read_excel(link, sheet_name="EMPRESA")
                     df_t.columns = df_t.columns.str.strip()
                     
-                    # FILTRO CAZA-ENCABEZADOS REPETIDOS: Elimina filas que digan "NIT" en los datos
                     df_t['NIT'] = df_t['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                     df_t = df_t[~df_t['NIT'].str.upper().isin(['NIT', 'NAN', ''])]
                     
@@ -324,7 +337,6 @@ with tab2:
                 df_m = pd.read_excel(get_direct_excel_link(url_ss_mensual), sheet_name="SSGCON")
                 df_m.columns = df_m.columns.str.strip()
                 
-                # FILTRO CAZA-ENCABEZADOS REPETIDOS PARA EL REPORTE MENSUAL
                 df_m['NIT'] = df_m['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 df_m = df_m[~df_m['NIT'].str.upper().isin(['NIT', 'NAN', ''])]
                 
@@ -366,9 +378,16 @@ with tab2:
                 df_export['DIFERENCIA'] = df_export['TOTAL SEGURIDAD SOCIAL APROPIADO'] - df_export['VALOR SEGURIDAD SOCIAL']
                 df_export['TIPO'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
+                # NUEVA COLUMNA CIUDAD (Inyectada al final de la tabla antes de las celdas ocultas)
+                df_export['CIUDAD'] = "BOGOTA - CALI" if "Bogotá" in ciudad_2 else "EJE CAFETERO"
+                
+                df_export['AP1_REF'] = ap1_num.astype(int).astype(str)
+                df_export['AP2_REF'] = ap2_num.astype(int).astype(str)
+                df_export['AP3_REF'] = ap3_num.astype(int).astype(str)
+                
                 st.session_state['df_cruce_2'] = df_export
                 st.success("¡Cruce de Seguridad Social consolidado!")
-                st.dataframe(df_export.head())
+                st.dataframe(df_export.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']).head())
             except Exception as e:
                 st.error(f"Error procesando. Detalle: {e}")
         else:
@@ -398,7 +417,12 @@ with tab3:
     with col_fic2: url_fic_ap2 = st.text_input("URL Apropiación 2 (Opcional):", key="url_fic_ap2")
     with col_fic3: url_fic_ap3 = st.text_input("URL Apropiación 3 (Opcional):", key="url_fic_ap3")
         
-    url_fic_mensual = st.text_input("URL Reporte Mensual de FIC:", key="url_fic_mensual")
+    # SE AGREGÓ EL SELECTOR DE CIUDAD TAMBIÉN AQUÍ
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        url_fic_mensual = st.text_input("URL Reporte Mensual de FIC:", key="url_fic_mensual")
+    with col_f2:
+        ciudad_3 = st.selectbox("Selecciona la región del pago:", ["Bogotá (NOMCONBOG)", "Eje Cafetero (NOMCONEJE)"], key="ciudad_tab3")
     
     if st.button("Generar Cruce FIC", type="primary"):
         urls_validas = [u for u in [url_fic_ap1, url_fic_ap2, url_fic_ap3] if u.strip() != ""]
@@ -410,7 +434,6 @@ with tab3:
                     df_t = pd.read_excel(link, sheet_name="EMPRESA")
                     df_t.columns = df_t.columns.str.strip()
                     
-                    # FILTRO CAZA-ENCABEZADOS REPETIDOS
                     df_t['NIT'] = df_t['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                     df_t = df_t[~df_t['NIT'].str.upper().isin(['NIT', 'NAN', ''])]
                     
@@ -428,7 +451,6 @@ with tab3:
                 df_m = pd.read_excel(get_direct_excel_link(url_fic_mensual), sheet_name="FICCON")
                 df_m.columns = df_m.columns.str.strip()
                 
-                # FILTRO CAZA-ENCABEZADOS REPETIDOS
                 df_m['NIT'] = df_m['NIT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 df_m = df_m[~df_m['NIT'].str.upper().isin(['NIT', 'NAN', ''])]
                 
@@ -470,9 +492,16 @@ with tab3:
                 df_export['DIFERENCIA'] = df_export['TOTAL FIC'] - df_export['VALOR FIC']
                 df_export['TIPO'] = cruce.apply(lambda r: coalesce_strings(r, tip_cols), axis=1)
                 
+                # NUEVA COLUMNA CIUDAD
+                df_export['CIUDAD'] = "BOGOTA - CALI" if "Bogotá" in ciudad_3 else "EJE CAFETERO"
+                
+                df_export['AP1_REF'] = ap1_num.astype(int).astype(str)
+                df_export['AP2_REF'] = ap2_num.astype(int).astype(str)
+                df_export['AP3_REF'] = ap3_num.astype(int).astype(str)
+                
                 st.session_state['df_cruce_3'] = df_export
                 st.success("¡Cruce de FIC consolidado!")
-                st.dataframe(df_export.head())
+                st.dataframe(df_export.drop(columns=['AP1_REF', 'AP2_REF', 'AP3_REF']).head())
             except Exception as e:
                 st.error(f"Error procesando. Detalle: {e}")
         else:
